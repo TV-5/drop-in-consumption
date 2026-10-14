@@ -1,11 +1,13 @@
-"""Consumption-drop theft detection MVP: upload -> detect -> send to SE.
+"""Consumption-drop theft detection MVP: generate data -> detect -> send to SE.
 
 Run with:  streamlit run app.py
 """
 import os
+import re
 from pathlib import Path
 
 import altair as alt
+import numpy as np
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
@@ -14,13 +16,14 @@ from src.baseline import windows
 from src.config import load_config
 from src.deliver import build_emails, send_emails
 from src.pipeline import run_pipeline
-from src.schemas import SCHEMAS, parse, template
+from sample_data import hierarchy
+from sample_data.generate import SCENARIOS, generate_population
+from src.schemas import SCHEMAS, parse
 from src.suppress import SUPPRESSION_CODES
 
 ROOT = Path(__file__).parent
-SAMPLE_DIR = ROOT / "sample_data"
 LOG_PATH = ROOT / "delivery_log.csv"
-STEPS = ["1. Upload data", "2. Detect suspected thefts", "3. Send to SE"]
+STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
 
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="Consumption-drop detection", page_icon="⚡", layout="wide")
@@ -29,7 +32,10 @@ ss = st.session_state
 ss.setdefault("data", {})       # kind -> parsed, valid dataframe
 ss.setdefault("step", STEPS[0])
 ss.setdefault("scores", None)
+ss.setdefault("truth", None)  # ground_truth of the generated population
 ss.setdefault("eval_date", None)
+SEED = 7
+MIN_DAYS = cfg.baseline_days + cfg.baseline_gap_days + cfg.current_window_days
 
 
 def go(step: str):
@@ -38,17 +44,6 @@ def go(step: str):
 
 def all_loaded() -> bool:
     return all(k in ss.data for k in SCHEMAS)
-
-
-def load_csv(source, kind: str) -> list[str]:
-    raw = pd.read_csv(source, dtype=str, keep_default_na=False, na_values=[""])
-    df, errors = parse(raw, kind)
-    if errors:
-        ss.data.pop(kind, None)
-    else:
-        ss.data[kind] = df
-    ss.scores = None  # new data invalidates any previous run
-    return errors
 
 
 # ---------------------------------------------------------------- sidebar
@@ -66,49 +61,158 @@ with st.sidebar:
 
 
 # ---------------------------------------------------------------- step 1
-def step_upload():
-    st.header("Step 1 · Upload data")
-    st.write("Upload the three CSV files in the formats below. Each file is checked against its "
-             "data contract before it can be used.")
+@st.cache_data(show_spinner=False)
+def generate(days: int, end: str, subdivision: str) -> dict[str, pd.DataFrame]:
+    # Fixed seed: the same area and settings always give the same data. Real data would come from the MDM database.
+    return generate_population(days, SEED, end, subdivision)
 
-    with st.expander("No data yet? Load the synthetic sample population"):
-        st.write("500 meters, 180 days, with injected bypasses, vacancies, comms failures, DER, "
-                 "meter replacements and a seasonal swing on every meter.")
-        if st.button("Load sample data"):
-            if not (SAMPLE_DIR / "daily_consumption.csv").exists():
-                from sample_data.generate import generate_population
-                for name, df in generate_population().items():
-                    df.to_csv(SAMPLE_DIR / f"{name}.csv", index=False)
-            for kind, spec in SCHEMAS.items():
-                load_csv(SAMPLE_DIR / spec["filename"], kind)
-            st.rerun()
 
-    for kind, spec in SCHEMAS.items():
-        st.subheader(spec["label"])
-        c1, c2 = st.columns([3, 1])
-        with c2:
-            st.caption("Required columns")
-            st.code(", ".join(spec["columns"]), language=None, wrap_lines=True)
-            st.download_button("Download blank template", template(kind).to_csv(index=False),
-                               file_name=spec["filename"], mime="text/csv", key=f"tpl_{kind}")
-        with c1:
-            up = st.file_uploader(spec["filename"], type="csv", key=f"up_{kind}")
-            if up is not None and ss.get(f"last_{kind}") != (up.name, up.size):
-                ss[f"last_{kind}"] = (up.name, up.size)
-                ss[f"err_{kind}"] = load_csv(up, kind)
-            for e in ss.get(f"err_{kind}", []):
+def scenario_label(kind: str) -> str:
+    return {"der_added": "Rooftop solar (DER) added"}.get(kind, kind.replace("_", " ").capitalize())
+
+
+def step_generate():
+    st.header("Step 1 · Generate data")
+    st.write("This is a mock project, so instead of asking you for real utility data, the app builds a "
+             "synthetic population of smart meters. A handful of meters have known problems planted in them, "
+             "so after detection you can see exactly which ones the pipeline caught and which it correctly ignored.")
+
+    st.subheader("Choose the area to analyse")
+    st.write("One sub-division is analysed at a time, the same unit an inspection list is sent for.")
+    sd_id = st.selectbox("Sub-division", list(hierarchy.SUBDIVISIONS), format_func=hierarchy.label, key="sd_pick")
+    show_hierarchy(sd_id)
+
+    st.subheader("Set up the data")
+    st.write(f"Data is generated for all **{hierarchy.SUBDIVISIONS[sd_id]['meters']:,} smart meters** installed in "
+             f"{hierarchy.SUBDIVISIONS[sd_id]['name']}. Choose how much history to create.")
+    with st.form("gen"):
+        c = st.columns(2)
+        days = c[0].number_input("Days of history", MIN_DAYS, 365, 180, step=10,
+                                 help=f"At least {MIN_DAYS}: {cfg.baseline_days}-day baseline + "
+                                      f"{cfg.baseline_gap_days}-day gap + {cfg.current_window_days}-day current window.")
+        end = c[1].date_input("Last reading date", value=pd.Timestamp("2026-10-04"),
+                              help="The most recent day of readings. Detection is normally run for this date.")
+        submitted = st.form_submit_button(f"Generate data for {hierarchy.SUBDIVISIONS[sd_id]['name']}", type="primary")
+
+    if submitted:
+        with st.spinner("Generating meters…"):
+            data = generate(int(days), str(end), sd_id)
+        for kind, spec in SCHEMAS.items():
+            df, errors = parse(data[spec["filename"].removesuffix(".csv")].astype(str), kind)
+            for e in errors:
                 st.error(e)
-            if kind in ss.data:
-                df = ss.data[kind]
-                show_summary(kind, df)
-                st.dataframe(df.head(500), width="stretch", hide_index=True, height=220)
-        st.divider()
+            ss.data[kind] = df
+        ss.truth = data["ground_truth"]
+        ss.sd_id = sd_id
+        ss.scores = None  # new data invalidates any previous run
+        ss.pop("last_result", None)
 
-    if all_loaded():
-        cross_checks()
-        st.button("Next: detect suspected thefts →", type="primary", on_click=go, args=(STEPS[1],))
-    else:
-        st.info("Upload all three files to continue.")
+    if not all_loaded():
+        st.info("Choose a sub-division and generate the data to continue.")
+        return
+    if ss.sd_id != sd_id:
+        st.warning(f"The data below is still for {hierarchy.label(ss.sd_id)}. "
+                   "Generate again to analyse the sub-division selected above.")
+
+    st.success(f"Data generated for {hierarchy.label(ss.sd_id)}.")
+    explain_data()
+    explain_scenarios()
+    st.button("Next: detect suspected thefts →", type="primary", on_click=go, args=(STEPS[1],))
+
+
+def show_hierarchy(sd_id: str):
+    sd = hierarchy.SUBDIVISIONS[sd_id]
+    div = hierarchy.DIVISIONS[sd["division"]]
+    net = hierarchy.network(sd_id)
+    c1, c2 = st.columns(2)
+    with c1.container(border=True):
+        st.markdown("**Office hierarchy**")
+        st.metric("Installed smart meters", f"{sd['meters']:,}")
+        st.markdown("\n".join([
+            f"- **Circle** · {hierarchy.CIRCLE['name']} ({hierarchy.CIRCLE['id']}) · {hierarchy.CIRCLE['se_name']}",
+            f"    - **Division** · {div['name']} ({sd['division']}) · {div['ee_name']}",
+            f"        - **Sub-division** · {sd['name']} ({sd_id}) · {sd['ae_name']}",
+        ]))
+        st.caption("The inspection list for this sub-division is emailed to the circle SE in Step 3.")
+    with c2.container(border=True):
+        st.markdown("**Network hierarchy**")
+        lines = []
+        for ss_id, feeders in net.groupby("substation_id", sort=False):
+            lines.append(f"- **{ss_id}** (33/11 kV substation): {feeders['meters'].sum():,} meters")
+            for feeder, dts in feeders.groupby("feeder_id", sort=False):
+                lines.append(f"    - **{feeder}** (11 kV feeder): {dts['meters'].sum():,} meters on {len(dts)} DTs, "
+                             f"{dts['dt_id'].iloc[0]} to {dts['dt_id'].iloc[-1]}")
+        st.markdown("\n".join(lines))
+        st.caption(f"{net['substation_id'].nunique()} substations · {net['feeder_id'].nunique()} feeders · "
+                   f"{len(net)} distribution transformers · {net['meters'].sum():,} meters")
+        with st.expander("Meters per transformer"):
+            st.dataframe(net.rename(columns={"dt_id": "DT", "feeder_id": "Feeder", "substation_id": "Substation",
+                                             "meters": "Meters"}), width="stretch", hide_index=True)
+
+
+def explain_data():
+    st.subheader("What the data contains")
+    sd = hierarchy.SUBDIVISIONS[ss.sd_id]
+    st.write(f"Smart meters in {sd['name']} sub-division, spread across its {len(hierarchy.network(ss.sd_id))} "
+             "distribution transformers (DTs). Every meter belongs to one DT, which is how the pipeline finds "
+             "comparable neighbours (peers).")
+    t1, t2, t3 = st.tabs(["Daily consumption", "Meter master", "Officers"])
+    with t1:
+        st.write("One row per meter per day: the kWh imported from the grid, how many of the 48 half-hourly "
+                 "readings actually arrived, and the share of the day supply voltage was present.")
+        show_summary("daily", ss.data["daily"])
+        st.dataframe(ss.data["daily"].head(200), width="stretch", hide_index=True, height=220)
+    with t2:
+        st.write("One row per meter: who the consumer is, which DT and sub-division it sits on, its tariff and "
+                 "sanctioned load, whether it is still connected, when it was installed, and whether rooftop "
+                 "solar is registered.")
+        show_summary("master", ss.data["master"])
+        st.dataframe(ss.data["master"], width="stretch", hide_index=True, height=220)
+    with t3:
+        st.write("Which Superintending Engineer (SE) receives this sub-division's weekly list of suspected "
+                 "cases. You can change the address in Step 3 before sending.")
+        show_summary("officers", ss.data["officers"])
+        st.dataframe(ss.data["officers"], width="stretch", hide_index=True)
+
+
+def explain_scenarios():
+    st.subheader("Scenarios the data covers")
+    st.write("**Every** meter's consumption slides by about 35% from the summer peak into autumn. That "
+             "is the trap: a naive \"consumption dropped\" rule would flag the whole town. The pipeline has to "
+             "compare each meter with its peers on the same transformer, and only flag drops well beyond theirs.")
+    truth = ss.truth
+    counts = truth["injected_type"].value_counts()
+    n_normal = len(ss.data["master"]) - len(truth)
+    table = pd.DataFrame([
+        {"Scenario": scenario_label(k),
+         "Meters": n_normal if k == "normal" else int(counts.get(k, 0)),
+         "What was injected": what, "What detection should do": expect}
+        for k, (what, expect) in SCENARIOS.items()
+    ])
+    st.dataframe(table, width="stretch", hide_index=True,
+                 column_config={"What was injected": st.column_config.TextColumn(width="large"),
+                                "What detection should do": st.column_config.TextColumn(width="medium")})
+    st.caption("Only the two bypass scenarios are theft. Every other drop has an innocent explanation, and the "
+               "pipeline must recognise it rather than send an engineer to someone's door.")
+
+    kinds = [k for k in SCENARIOS if k != "normal" and k in counts]
+    kind = st.selectbox("See an example meter", kinds, format_func=scenario_label)
+    row = truth[truth["injected_type"] == kind].iloc[0]
+    daily = ss.data["daily"]
+    normal_ids = set(ss.data["master"]["meter_id"]) - set(truth["meter_id"])
+    typical = (daily[daily["meter_id"].isin(normal_ids)].groupby("reading_date")["kwh_import"].median()
+               .reset_index().assign(series="Typical normal meter (median)"))
+    example = daily.loc[daily["meter_id"] == row["meter_id"], ["reading_date", "kwh_import"]].assign(
+        series=f"Meter {row['meter_id']}")
+    chart = alt.Chart(pd.concat([typical, example])).mark_line(strokeWidth=2).encode(
+        x=alt.X("reading_date:T", title=None), y=alt.Y("kwh_import:Q", title="kWh per day"),
+        color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
+                        scale=alt.Scale(range=["#2a78d6", "#8a8984"])),
+        tooltip=[alt.Tooltip("reading_date:T", format="%d %b %Y"), alt.Tooltip("kwh_import:Q", format=".2f")])
+    onset = alt.Chart(pd.DataFrame({"d": [pd.Timestamp(row["onset_date"])]})).mark_rule(
+        strokeDash=[2, 2], color="#eb6834").encode(x="d:T")
+    st.altair_chart((chart + onset).properties(height=260), width="stretch")
+    st.caption(f"{SCENARIOS[kind][0]} The dotted line marks when it was injected. Expected outcome: {SCENARIOS[kind][1]}.")
 
 
 def show_summary(kind: str, df: pd.DataFrame):
@@ -130,31 +234,12 @@ def show_summary(kind: str, df: pd.DataFrame):
         m[1].metric("Sub-divisions covered", f"{df['subdivision_id'].nunique():,}")
 
 
-def cross_checks():
-    daily, master, officers = ss.data["daily"], ss.data["master"], ss.data["officers"]
-    no_master = set(daily["meter_id"]) - set(master["meter_id"])
-    no_se = set(master["subdivision_id"]) - set(officers["subdivision_id"])
-    span = (daily["reading_date"].max() - daily["reading_date"].min()).days + 1
-    need = cfg.baseline_days + cfg.baseline_gap_days
-    if no_master:
-        st.warning(f"{len(no_master)} meters in daily consumption are missing from the meter master; "
-                   "they will be reported as NO_MASTER_RECORD.")
-    if no_se:
-        st.warning(f"No SE mapped for sub-division(s): {', '.join(sorted(no_se))}. "
-                   "Their suspected cases cannot be emailed.")
-    if span < need:
-        st.error(f"Daily data covers {span} days; at least {need} are needed "
-                 f"({cfg.baseline_days}-day baseline + {cfg.baseline_gap_days}-day gap).")
-    else:
-        st.success("All three files are valid.")
-
-
 # ---------------------------------------------------------------- step 2
 def step_detect():
     st.header("Step 2 · Detect suspected thefts")
     if not all_loaded():
-        st.warning("Upload all three files first.")
-        st.button("← Back to upload", on_click=go, args=(STEPS[0],))
+        st.warning("Generate the data first.")
+        st.button("← Back to data generation", on_click=go, args=(STEPS[0],))
         return
     daily, master = ss.data["daily"], ss.data["master"]
     max_d = daily["reading_date"].max().date()
@@ -189,6 +274,7 @@ def step_detect():
     m[2].metric("Suppressed", f"{len(suppressed):,}")
     m[3].metric("Est. kWh at risk", f"{flagged['est_unbilled_kwh'].sum():,.0f}")
     st.caption(f"Results for evaluation date {ss.eval_date:%d %b %Y}.")
+    visit_summary(flagged)
 
     t1, t2, t3 = st.tabs([f"Suspected thefts ({len(flagged)})", f"Suppressed ({len(suppressed)})", "All meters"])
     with t1:
@@ -221,11 +307,51 @@ def step_detect():
                      width="stretch", hide_index=True)
     with t3:
         st.dataframe(scores, width="stretch", hide_index=True)
+    if ss.truth is not None:
+        truth_check(scores)
 
     st.download_button("Download all scores (CSV)", scores.to_csv(index=False),
                        file_name=f"scores_{ss.eval_date}.csv", mime="text/csv")
     if len(flagged):
         st.button("Next: send to SE →", type="primary", on_click=go, args=(STEPS[2],))
+
+
+def visit_summary(flagged: pd.DataFrame):
+    """How many inspection visits each sub-division's SE will be asked for."""
+    st.subheader(f"Inspection visits to request: {len(flagged)} meters")
+    officers = ss.data["officers"]
+    per_sd = (flagged.groupby("subdivision_id")
+              .agg(meters=("meter_id", "size"), kwh=("est_unbilled_kwh", "sum"))
+              .reindex(officers["subdivision_id"], fill_value=0).reset_index()
+              .merge(officers, on="subdivision_id", how="left"))
+    cols = st.columns(len(per_sd))
+    for col, r in zip(cols, per_sd.itertuples()):
+        with col.container(border=True):
+            st.metric(f"Sub-division {r.subdivision_id}", f"{r.meters} visits")
+            st.caption(f"Goes to **{r.se_name}** ({r.se_email}) · {r.kwh:,.0f} kWh at risk")
+    unmapped = sorted(set(flagged["subdivision_id"].dropna()) - set(officers["subdivision_id"]))
+    if unmapped:
+        st.warning(f"No SE for sub-division(s) {', '.join(unmapped)}: their meters cannot be sent.")
+
+
+def truth_check(scores: pd.DataFrame):
+    """Compare the run with the scenarios planted by the generator. Only possible because the data is synthetic."""
+    with st.expander("How did detection do against the planted scenarios?", expanded=True):
+        s = scores.merge(ss.truth[["meter_id", "injected_type"]], on="meter_id", how="left")
+        s["injected_type"] = s["injected_type"].fillna("normal")
+        s["outcome"] = np.where(s["status"] == "SUPPRESSED", "Suppressed: " + s["suppression_code"], s["status"])
+        table = pd.crosstab(s["injected_type"], s["outcome"]).reindex([k for k in SCENARIOS if k in set(s["injected_type"])])
+        table.index = [scenario_label(k) for k in table.index]
+        table.insert(0, "Expected", [SCENARIOS[k][1] for k in SCENARIOS if k in set(s["injected_type"])])
+        st.dataframe(table, width="stretch")
+        theft = s["injected_type"].isin(["partial_bypass", "full_bypass"])
+        flagged = s["status"] == "FLAGGED"
+        m = st.columns(3)
+        m[0].metric("Bypasses caught", f"{(theft & flagged).sum()} of {theft.sum()}")
+        m[1].metric("Innocent meters flagged", f"{(~theft & flagged).sum()}")
+        m[2].metric("Precision of the list", f"{(theft & flagged).sum() / max(flagged.sum(), 1):.0%}")
+        st.caption("Bypasses on very small loads can fall under the absolute kWh floor by design. "
+                   "Results depend on the evaluation date: a date before the injections shows nothing to catch.")
 
 
 def meter_chart(view: pd.DataFrame):
@@ -269,6 +395,20 @@ def step_send():
         st.warning("Run detection first.")
         st.button("← Back to detection", on_click=go, args=(STEPS[1],))
         return
+
+    st.subheader("Recipient")
+    officers = ss.data["officers"]
+    se = officers.iloc[0]
+    st.caption(f"The list for {hierarchy.label(ss.sd_id)} goes to {se['se_name']}. "
+               "Put your own address here if you want to receive it.")
+    addr = st.text_input("SE email", value=se["se_email"]).strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", addr):
+        st.error("Enter a valid email address.")
+        return
+    if addr != se["se_email"]:
+        ss.data["officers"] = officers.assign(se_email=addr)
+        ss.pop("last_result", None)
+
     emails, unmapped = build_emails(ss.scores, ss.data["officers"], ss.eval_date)
     if unmapped:
         st.warning(f"Flagged meters in {', '.join(unmapped)} have no SE in the directory and will not be sent.")
@@ -321,4 +461,4 @@ def step_send():
             st.dataframe(pd.read_csv(LOG_PATH, dtype=str), width="stretch", hide_index=True)
 
 
-{STEPS[0]: step_upload, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
+{STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
