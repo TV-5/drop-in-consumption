@@ -1,0 +1,23 @@
+# Secrets: never commit real credentials
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Runtime output (contains real recipient emails)
+delivery_log.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+~$*

@@ -1,0 +1,25 @@
+# Every threshold lives here. Tuning during the pilot must never require a code change.
+baseline_days: 90
+baseline_gap_days: 30
+current_window_days: 30
+min_baseline_days_covered: 60
+min_peer_group_size: 20
+min_comm_availability_pct: 85
+min_drop_kwh_per_day: 2.0
+excess_drop_threshold_pct: 20.0
+
+# Current daily kWh below this is treated as a vacant premise, not a bypass.
+vacancy_kwh_per_day: 0.1
+# Onset = first day the forward 5-day median falls below this fraction of the peer-adjusted baseline.
+onset_fraction: 0.7
+# Sanctioned-load band edges (kW) used to form peer groups.
+load_band_edges_kw: [0, 2, 5, 10, 25, 1000]
+
+model_version: v1-mvp
+
+smtp:
+  host: smtp.gmail.com
+  # 465 = SSL, 587 = STARTTLS. 587 is blocked on this network, so 465 is used.
+  port: 465
+  # Sender display address; login credentials come from .env (SMTP_USER, SMTP_PASSWORD).
+  sender_name: Consumption-drop analytics
