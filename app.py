@@ -51,10 +51,36 @@ def start_over():
     for k in list(ss.keys()):
         del ss[k]
     ss.step = STEPS[0]
+    ss.scroll_to_top = 1
 
 
 def go(step: str):
+    if step != ss.step:
+        ss.scroll_to_top = ss.get("scroll_to_top", 0) + 1  # a new page opens at its top
     ss.step = step
+
+
+# Streamlit keeps the scroll position when the page underneath changes, so a navigation would otherwise open the
+# next page wherever the last one was scrolled to. Runs in the app page via a same-origin iframe; the counter makes
+# each navigation's iframe new, so it runs again even when two navigations happen in a row.
+SCROLL_TO_TOP_JS = """<script>
+(function () {
+  const d = window.parent.document;
+  function top() {
+    window.parent.scrollTo(0, 0);
+    d.querySelectorAll('[data-testid="stMain"], [data-testid="stAppViewContainer"], section.main')
+      .forEach(function (el) { el.scrollTop = 0; });
+  }
+  top(); setTimeout(top, 80); setTimeout(top, 300);
+})();
+</script><!-- navigation NAV -->"""
+
+
+def scroll_to_top():
+    n = ss.pop("scroll_to_top", 0)
+    if n:
+        with st.container(key="scroll_js"):
+            st.iframe(SCROLL_TO_TOP_JS.replace("NAV", str(n)), height=1)
 
 
 def all_loaded() -> bool:
@@ -100,6 +126,7 @@ def app_styles():
     min-height: 48px; padding: 0 24px; font-weight: 700; }
   .intro-meta { font-size: 14px; color: #5b6172; }
   .intro-meta a { color: #2459d6; font-weight: 600; }
+  .st-key-scroll_js { height: 0; overflow: hidden; margin: 0; }
   .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
   .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
   .wiz-line div { height: 3px; background: #2459d6; }
@@ -1066,3 +1093,4 @@ else:
     st.button("About this project", key="about", type="tertiary", on_click=go, args=(INTRO,))
 st.caption("Every output says *suspected* / *recommended for inspection*. "
            "A finding of theft is made by a field officer, not by this tool.")
+scroll_to_top()
