@@ -115,8 +115,12 @@ def app_styles():
   /* Page heading: small step label above a Manrope title, intro at reading width */
   .eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .75rem;
              letter-spacing: .18em; color: #2459d6; margin: 8px 0 4px; }
-  .page-title { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.3rem; letter-spacing: -.02em;
-                margin: 0 0 6px; padding: 0; line-height: 1.15; }
+  .page-title { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(1.6rem, 4vw, 2.3rem);
+                letter-spacing: -.02em; margin: 0; padding: 0; line-height: 1.15; }
+  /* The step heading pins like the intro's section headings. Sticky must sit on the page-level element (whose
+     parent is the whole page), not inside st.html's own box, which is only as tall as the heading. */
+  [data-testid="stVerticalBlock"] > div:has(.page-head) {
+    position: sticky; top: 3.75rem; z-index: 5; background: #ffffff; padding: 4px 0 10px; }
   .page-intro { max-width: 46rem; line-height: 1.6; margin: 0; }
 
   /* Wizard footer: progress line, Back, step dots, Next */
@@ -220,8 +224,11 @@ def stepper():
 
 
 def page_heading(i: int, title: str, intro: str = ""):
-    st.html(f'<div class="eyebrow">STEP {i + 1} OF {len(STEPS)}</div><h1 class="page-title">{title}</h1>'
-            + (f'<p class="page-intro">{intro}</p>' if intro else ""))
+    """Step label and title (pinned under the app bar while the page scrolls), then the intro, which is not."""
+    st.html(f'<div class="page-head"><div class="eyebrow">STEP {i + 1} OF {len(STEPS)}</div>'
+            f'<h1 class="page-title">{title}</h1></div>')
+    if intro:
+        st.html(f'<p class="page-intro">{intro}</p>')
 
 
 NEXT_LABELS = ["Detect thefts →", "Send to SE →"]
