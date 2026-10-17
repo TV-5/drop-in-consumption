@@ -52,7 +52,10 @@ STEP_NAMES = ["Generate data", "Detect thefts", "Send to SE"]
 
 
 def stepper():
-    """Pinned ribbon: where you are, what each step produced, and which steps can be opened yet."""
+    """Progress track under the app bar: where you are, what each step produced, and which steps can be opened yet.
+
+    Also emits the page-wide styles (app bar, headings, wizard footer).
+    """
     scores = ss.scores
     n_flagged = 0 if scores is None else int((scores["status"] == "FLAGGED").sum())
     res = ss.get("last_result")
@@ -83,25 +86,45 @@ def stepper():
   [data-testid="stMainBlockContainer"] { padding-top: 5rem; }
 
   /* Connected progress track: one segment per step, label and status underneath. */
-  .st-key-stepper [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
-  .st-key-stepper [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
-  .st-key-stepper button { justify-content: flex-start; border: none !important; border-radius: 0 !important;
+  /* Page heading: small step label above a Manrope title, intro at reading width */
+  .eyebrow { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .75rem;
+             letter-spacing: .18em; color: #2459d6; margin: 8px 0 4px; }
+  .page-title { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 2.3rem; letter-spacing: -.02em;
+                margin: 0 0 6px; padding: 0; line-height: 1.15; }
+  .page-intro { max-width: 46rem; line-height: 1.6; margin: 0; }
+
+  /* Wizard footer: progress line, Back, step dots, Next */
+  .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
+  .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
+  .wiz-line div { height: 3px; background: #2459d6; }
+  .st-key-wizard_footer [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; align-items: center; }
+  .st-key-wizard_footer [data-testid="stColumn"] { min-width: 0 !important; }
+  .wiz-mid { display: flex; justify-content: center; align-items: center; gap: 6px; font-size: .8rem; opacity: .85; }
+  .wiz-dot { width: 7px; height: 7px; border-radius: 4px; background: #cfd3dc; }
+  .wiz-dot.on { width: 22px; background: #2459d6; }
+  .wiz-mid span { margin-left: 10px; white-space: nowrap; }
+  @media (max-width: 640px) { .wiz-mid span { display: none; } }
+  [class*="st-key-stepper"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
+  [class*="st-key-stepper"] [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
+  [class*="st-key-stepper"] button { justify-content: flex-start; border: none !important; border-radius: 0 !important;
                            background: transparent !important; box-shadow: none !important; min-height: 0 !important;
                            padding: 12px 0 2px !important; position: relative; }
-  .st-key-stepper button::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+  [class*="st-key-stepper"] button > div { justify-content: flex-start; width: 100%; }
+  [class*="st-key-stepper"] button p { text-align: left; }
+  [class*="st-key-stepper"] button::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
                                    border-radius: 3px; background: #e6e7eb; }
-  .st-key-stepper [class*="_ok"] button::before, .st-key-stepper [class*="_current"] button::before {
+  [class*="st-key-stepper"] [class*="_ok"] button::before, [class*="st-key-stepper"] [class*="_current"] button::before {
     background: #2459d6; }
-  .st-key-stepper button p { font-size: .85rem; font-weight: 700; color: #3c3f4a; white-space: nowrap;
+  [class*="st-key-stepper"] button p { font-size: .85rem; font-weight: 700; color: #3c3f4a; white-space: nowrap;
                              overflow: hidden; text-overflow: ellipsis; }
-  .st-key-stepper [class*="_current"] button p { color: #2459d6; }
-  .st-key-stepper button p span { font-size: .75rem; font-weight: 400; margin-left: 6px; }
-  .st-key-stepper button:disabled { opacity: .7; }
-  .st-key-stepper button:not(:disabled):hover p { text-decoration: underline; }
+  [class*="st-key-stepper"] [class*="_current"] button p { color: #2459d6; }
+  [class*="st-key-stepper"] button p span { font-size: .75rem; font-weight: 400; margin-left: 6px; }
+  [class*="st-key-stepper"] button:disabled { opacity: .7; }
+  [class*="st-key-stepper"] button:not(:disabled):hover p { text-decoration: underline; }
   @media (max-width: 640px) {
     [data-testid="stHeader"]::before { left: 1rem; font-size: 1.05rem; max-width: calc(100% - 8rem); }
-    .st-key-stepper button p { font-size: .78rem; }
-    .st-key-stepper button p span { display: none; }
+    [class*="st-key-stepper"] button p { font-size: .78rem; }
+    [class*="st-key-stepper"] button p span { display: none; }
   }
 </style>""")
     cols = st.columns(len(STEPS))
@@ -111,6 +134,32 @@ def stepper():
         mark = "✓" if done[i] and i != cur else str(i + 1)
         col.button(f"{mark} · {name} :gray[{subs[i]}]", key=f"step{i}_{state}{'_ok' if done[i] else ''}",
                    width="stretch", disabled=not reachable[i], help=subs[i], on_click=go, args=(STEPS[i],))
+
+
+def page_heading(i: int, title: str, intro: str = ""):
+    st.html(f'<div class="eyebrow">STEP {i + 1} OF {len(STEPS)}</div><h1 class="page-title">{title}</h1>'
+            + (f'<p class="page-intro">{intro}</p>' if intro else ""))
+
+
+NEXT_LABELS = ["Detect thefts →", "Send to SE →"]
+NEXT_BLOCKED = ["Generate data first", "Run detection and flag at least one meter first"]
+
+
+def wizard_footer():
+    """Back / step dots / Next, at the end of every page, so moving on never needs a scroll back up."""
+    cur = STEPS.index(ss.step)
+    scores = ss.scores
+    reachable = [True, all_loaded(), scores is not None and bool((scores["status"] == "FLAGGED").any())]
+    dots = "".join(f'<div class="wiz-dot{" on" if i == cur else ""}"></div>' for i in range(len(STEPS)))
+    st.html(f'<div class="wiz-line"><div style="width:{(cur + 1) / len(STEPS) * 100:.1f}%"></div></div>')
+    c = st.columns([1, 2, 1], vertical_alignment="center")
+    c[0].button("← Back", key="wiz_back", disabled=cur == 0, on_click=go, args=(STEPS[max(cur - 1, 0)],))
+    c[1].html(f'<div class="wiz-mid">{dots}<span>Step {cur + 1} of {len(STEPS)}</span></div>')
+    if cur < len(STEPS) - 1:
+        ok = reachable[cur + 1]
+        with c[2]:
+            st.button(NEXT_LABELS[cur], key="wiz_next", type="primary", width="stretch", disabled=not ok,
+                      help=None if ok else NEXT_BLOCKED[cur], on_click=go, args=(STEPS[cur + 1],))
 
 
 # ---------------------------------------------------------------- step 1
@@ -125,10 +174,10 @@ def scenario_label(kind: str) -> str:
 
 
 def step_generate():
-    st.header("Generate data")
-    st.write("This is a mock project, so instead of asking you for real utility data, the app builds a "
-             "synthetic population of smart meters. A handful of meters have known problems planted in them, "
-             "so after detection you can see exactly which ones the pipeline caught and which it correctly ignored.")
+    page_heading(0, "Generate data",
+                 "This is a mock project, so instead of asking you for real utility data, the app builds a synthetic "
+                 "population of smart meters. A handful of meters have known problems planted in them, so after "
+                 "detection you can see exactly which ones the pipeline caught and which it correctly ignored.")
 
     st.subheader("Choose the area to analyse")
     st.write("One sub-division is analysed at a time, the same unit an inspection list is sent for.")
@@ -191,23 +240,19 @@ def show_hierarchy(sd_id: str):
     n_feeders, n_dts = net["feeder_id"].nunique(), len(net)
     st.html(f"""
 <style>
-  .net-flow {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }}
-  .net-box {{ flex: 1 1 140px; min-width: 0; padding: 14px 16px; border-radius: 12px;
-             border: 1px solid rgba(42,120,214,.35); background: rgba(42,120,214,.08); }}
-  .net-num {{ font-size: 2rem; font-weight: 700; line-height: 1.1; color: #2a78d6; }}
-  .net-lbl {{ font-size: .95rem; font-weight: 600; }}
-  .net-sub {{ font-size: .8rem; opacity: .75; }}
-  .net-arrow {{ font-size: 1.4rem; opacity: .5; }}
-  @media (max-width: 640px) {{ .net-flow {{ flex-direction: column; align-items: stretch; }}
-                               .net-arrow {{ transform: rotate(90deg); text-align: center; }} }}
+  .net-flow {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 4px 0 8px; }}
+  .net-box {{ padding: 18px 18px 16px; border-radius: 10px; border: 1px solid #e3e7ef; background: #f6f8fc; }}
+  .net-num {{ font-family: 'Manrope', sans-serif; font-size: 2rem; font-weight: 800; line-height: 1.1;
+             color: #2459d6; margin-bottom: 6px; }}
+  .net-lbl {{ font-size: .95rem; font-weight: 700; }}
+  .net-sub {{ font-size: .8rem; opacity: .7; margin-top: 2px; }}
+  @media (max-width: 640px) {{ .net-flow {{ grid-template-columns: 1fr; }} }}
 </style>
 <div class="net-flow">
   <div class="net-box"><div class="net-num">{sd['meters']:,}</div><div class="net-lbl">smart meters</div>
     <div class="net-sub">one in every home or shop</div></div>
-  <div class="net-arrow">→</div>
   <div class="net-box"><div class="net-num">{n_feeders}</div><div class="net-lbl">feeders</div>
     <div class="net-sub">11 kV lines that carry power into the area</div></div>
-  <div class="net-arrow">→</div>
   <div class="net-box"><div class="net-num">{n_dts}</div><div class="net-lbl">transformers (DTs)</div>
     <div class="net-sub">the pole transformers each street hangs off</div></div>
 </div>""")
@@ -341,9 +386,7 @@ def show_example():
                "uses now, and <b>exactly where on its chart the pipeline flagged it</b>, or why it decided to leave "
                f"it alone.</p><p><b>{scenario_label(kind)}, meter {row['meter_id']}:</b> "
                f"{decision_text(res, html=True)}</p>")
-        c = st.columns(2)
-        c[0].button("Read the full example ↓", width="stretch", on_click=lambda: ss.update(show_example=True))
-        c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
+        st.button("Read the full example ↓", on_click=lambda: ss.update(show_example=True))
         return
 
     kind = st.selectbox("Pick a scenario", example_kinds(), format_func=scenario_label)
@@ -353,9 +396,7 @@ def show_example():
                "Step 2 lets you run it for another date.")
     meter_drilldown(res, eval_date, injected_onset=row["onset_date"],
                     note=f"{SCENARIOS[kind][0]} Expected outcome: {SCENARIOS[kind][1]}.")
-    c = st.columns(2)
-    c[0].button("Hide the example ↑", width="stretch", on_click=lambda: ss.update(show_example=False))
-    c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
+    st.button("Hide the example ↑", on_click=lambda: ss.update(show_example=False))
 
 
 def meter_drilldown(res: pd.Series, eval_date, injected_onset=None, note: str = ""):
@@ -559,7 +600,7 @@ def show_windows(eval_date, history_start, history_end, lead: str = ""):
 
 
 def step_detect():
-    st.header("Detect suspected thefts")
+    page_heading(1, "Detect suspected thefts")
     if not all_loaded():
         st.warning("Generate the data first.")
         st.button("← Back to data generation", on_click=go, args=(STEPS[0],))
@@ -568,8 +609,9 @@ def step_detect():
     max_d = daily["reading_date"].max().date()
     min_d = (daily["reading_date"].min() + pd.Timedelta(days=MIN_DAYS - 1)).date()
 
-    st.write("Pick the date to run the check for. It is the **last day of the period being checked**, not a single "
-             "day: the app looks at each meter's last month of use and compares it with its usual use before that.")
+    st.html('<p class="page-intro">Pick the date to run the check for. It is the <b>last day of the period being '
+            "checked</b>, not a single day: the app looks at each meter's last month of use and compares it with its "
+            "usual use before that.</p>")
     c1, c2 = st.columns([1, 3])
     with c1:
         eval_date = st.date_input("Run the check as of", value=max_d, min_value=min(min_d, max_d), max_value=max_d,
@@ -609,9 +651,6 @@ def step_detect():
     if ss.truth is not None:
         st.divider()
         truth_check(scores)
-        if len(flagged):
-            st.button("Next: send to SE →", type="primary", width="stretch", key="next_bottom",
-                      on_click=go, args=(STEPS[2],))
 
 
 FLAGGED_COLS = {
@@ -797,7 +836,7 @@ def truth_check(scores: pd.DataFrame):
 
 # ---------------------------------------------------------------- step 3
 def step_send():
-    st.header("Send suspected cases to SE")
+    page_heading(2, "Send suspected cases to SE")
     if ss.scores is None:
         st.warning("Run detection first.")
         st.button("← Back to detection", on_click=go, args=(STEPS[1],))
@@ -869,11 +908,12 @@ def sends_today() -> int:
     return int((log["sent_at"].str[:10] == date.today().isoformat()).sum())
 
 
-# The ribbon is drawn after the page so it reflects what this run just did (generated, detected, sent).
-ribbon = st.container(key="stepper")
+# Both tracks are drawn after the page so they reflect what this run just did (generated, detected, sent).
+ribbon = st.container(key="stepper_top")
 {STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
 with ribbon:
     stepper()
-st.divider()
+with st.container(key="wizard_footer"):
+    wizard_footer()
 st.caption("Every output says *suspected* / *recommended for inspection*. "
            "A finding of theft is made by a field officer, not by this tool.")
