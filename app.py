@@ -47,18 +47,63 @@ def all_loaded() -> bool:
     return all(k in ss.data for k in SCHEMAS)
 
 
-# ---------------------------------------------------------------- sidebar
-with st.sidebar:
-    st.title("⚡ Consumption-drop detection")
-    st.caption("Weekly MVP · peer-normalised drop analysis")
-    st.radio("Step", STEPS, key="step", label_visibility="collapsed")
-    st.divider()
-    for kind, spec in SCHEMAS.items():
-        st.write(("✅ " if kind in ss.data else "⬜ ") + spec["label"])
-    st.write(("✅ " if ss.scores is not None else "⬜ ") + "Detection run")
-    st.divider()
-    st.caption("Every output says *suspected* / *recommended for inspection*. "
-               "A finding of theft is made by a field officer, not by this tool.")
+# ---------------------------------------------------------------- progress ribbon
+STEP_NAMES = ["Generate data", "Detect thefts", "Send to SE"]
+
+
+def stepper():
+    """Pinned ribbon: where you are, what each step produced, and which steps can be opened yet."""
+    scores = ss.scores
+    n_flagged = 0 if scores is None else int((scores["status"] == "FLAGGED").sum())
+    res = ss.get("last_result")
+    n_sent = 0 if res is None else int(res["status"].isin(["SENT", "TEST_SENT"]).sum())
+    done = [all_loaded(), scores is not None, n_sent > 0]
+    reachable = [True, all_loaded(), n_flagged > 0]
+    if all_loaded():
+        daily = ss.data["daily"]
+        sub1 = f"{daily['meter_id'].nunique():,} meters · {daily['reading_date'].nunique()} days"
+    else:
+        sub1 = "start here"
+    sub2 = f"{n_flagged} suspected" if scores is not None else ("ready to run" if all_loaded() else "needs data")
+    sub3 = f"{n_sent} sent" if n_sent else ("ready to send" if n_flagged else "needs flagged meters")
+    subs = [sub1, sub2, sub3]
+    cur = STEPS.index(ss.step)
+    bg = "#0e1117" if st.context.theme.type == "dark" else "#ffffff"
+
+    st.html(f"""
+<style>
+  .st-key-stepper {{ position: sticky; top: 3.75rem; z-index: 990; background: {bg};
+                     padding: 6px 0 2px; border-bottom: 1px solid rgba(128,128,128,.2); }}
+  .st-key-stepper [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap !important; gap: 8px; }}
+  .st-key-stepper [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; width: auto !important; }}
+  .st-key-stepper button {{ justify-content: flex-start; border: none !important; border-radius: 0 !important;
+                            background: transparent !important; padding: 4px 2px 6px !important;
+                            border-bottom: 4px solid rgba(138,137,132,.35) !important; }}
+  .st-key-stepper button p {{ font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .st-key-stepper [class*="_done"] button {{ border-bottom-color: #1f9d55 !important; }}
+  .st-key-stepper [class*="_done"] button p {{ color: #1f9d55; }}
+  .st-key-stepper [class*="_current"] button {{ border-bottom-color: #2a78d6 !important; }}
+  .st-key-stepper [class*="_current"] button p {{ color: #2a78d6; }}
+  .st-key-stepper button:disabled p {{ opacity: .55; }}
+  .st-key-stepper [data-testid="stCaptionContainer"] {{ margin-top: -10px; }}
+  .stepper-title {{ display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }}
+  .stepper-title b {{ font-size: 1.05rem; }}
+  .stepper-title span {{ font-size: .8rem; opacity: .7; white-space: nowrap; }}
+  @media (max-width: 640px) {{
+    .st-key-stepper button p {{ font-size: .8rem; }}
+    .st-key-stepper [data-testid="stCaptionContainer"] {{ display: none; }}
+  }}
+</style>""")
+    # Called inside the container keyed "stepper", which the CSS above pins to the top.
+    st.html(f'<div class="stepper-title"><b>⚡ Consumption-drop detection</b>'
+            f'<span>Step {cur + 1} of {len(STEPS)} · {STEP_NAMES[cur]}</span></div>')
+    cols = st.columns(len(STEPS))
+    for i, (col, name) in enumerate(zip(cols, STEP_NAMES)):
+        state = "current" if i == cur else "done" if done[i] else "todo"
+        mark = "✓" if done[i] and i != cur else str(i + 1)
+        col.button(f"{mark}  {name}", key=f"step{i}_{state}", width="stretch", disabled=not reachable[i],
+                   on_click=go, args=(STEPS[i],))
+        col.caption(subs[i])
 
 
 # ---------------------------------------------------------------- step 1
@@ -817,4 +862,11 @@ def sends_today() -> int:
     return int((log["sent_at"].str[:10] == date.today().isoformat()).sum())
 
 
+# The ribbon is drawn after the page so it reflects what this run just did (generated, detected, sent).
+ribbon = st.container(key="stepper")
 {STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
+with ribbon:
+    stepper()
+st.divider()
+st.caption("Every output says *suspected* / *recommended for inspection*. "
+           "A finding of theft is made by a field officer, not by this tool.")

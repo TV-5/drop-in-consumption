@@ -1,0 +1,3 @@
+[theme]
+# Light by default, whatever the viewer's system setting. Viewers can still switch in the app menu (⋮ > Settings).
+base = "light"
