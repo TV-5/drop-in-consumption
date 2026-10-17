@@ -24,6 +24,12 @@ from src.suppress import SUPPRESSION_CODES
 ROOT = Path(__file__).parent
 LOG_PATH = ROOT / "delivery_log.csv"
 DAILY_SEND_LIMIT = 20
+# Demo inbox: every email goes here in demo mode, and every SE in the directory defaults to it. Read from the
+# server's settings only (MAIL_TO, else the sender's own address) so the owner's address never sits in the code.
+DEMO_INBOX = os.getenv("MAIL_TO", "").strip() or os.getenv("SMTP_USER", "").strip()
+# Real per-SE delivery is off unless the server opts in. On a public page anyone could otherwise use the
+# project's mail account to write to whatever address they type into the directory.
+SE_DELIVERY_ALLOWED = os.getenv("ALLOW_SE_DELIVERY", "").strip().lower() == "true"
 STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
 
 load_dotenv(ROOT / ".env")
@@ -214,6 +220,9 @@ def step_generate():
             for e in errors:
                 st.error(e)
             ss.data[kind] = df
+        ss.data["officers"] = default_officers(sd_id)
+        ss.officer_base = ss.data["officers"]
+        ss.officer_ver = ss.get("officer_ver", 0) + 1  # fresh directory editor for the new data
         ss.truth = data["ground_truth"]
         ss.sd_id = sd_id
         ss.scores = None  # new data invalidates any previous run
@@ -302,9 +311,10 @@ def explain_data():
         st.dataframe(ss.data["master"], width="stretch", hide_index=True, height=220)
     with t3:
         st.write("Which Superintending Engineer (SE) receives this sub-division's weekly list of suspected "
-                 "cases. In this demo, Step 3 delivers the email to the project owner's inbox instead.")
+                 f"cases. Every SE defaults to the demo inbox ({shown(DEMO_INBOX) or 'not configured'}); Step 3 lets you edit the list or "
+                 "upload the utility's own.")
         show_summary("officers", ss.data["officers"])
-        st.dataframe(ss.data["officers"], width="stretch", hide_index=True)
+        st.dataframe(masked_officers(ss.data["officers"]), width="stretch", hide_index=True)
 
 
 def explain_scenarios():
@@ -835,6 +845,12 @@ def truth_check(scores: pd.DataFrame):
 
 
 # ---------------------------------------------------------------- step 3
+def default_officers(sd_id: str) -> pd.DataFrame:
+    """The sub-division's SE, addressed to the demo inbox, in the same types an uploaded list is parsed to."""
+    officers = hierarchy.officer(sd_id)
+    return parse(officers.assign(se_email=DEMO_INBOX) if DEMO_INBOX else officers, "officers")[0]
+
+
 def step_send():
     page_heading(2, "Send suspected cases to SE")
     if ss.scores is None:
@@ -842,43 +858,63 @@ def step_send():
         st.button("← Back to detection", on_click=go, args=(STEPS[1],))
         return
 
-    st.subheader("Recipient")
-    se = ss.data["officers"].iloc[0]
-    st.caption(f"The list for {hierarchy.label(ss.sd_id)} is addressed to {se['se_name']}. This is a demo, so every "
-               "email is delivered to the project owner's inbox, never to the SE address.")
-
-    emails, unmapped = build_emails(ss.scores, ss.data["officers"], ss.eval_date)
+    officers = officer_directory()
+    if officers is None:
+        return
+    emails, unmapped = build_emails(ss.scores, officers, ss.eval_date)
     if unmapped:
         st.warning(f"Flagged meters in {', '.join(unmapped)} have no SE in the directory and will not be sent.")
     if not emails:
         st.info("No suspected cases to send for this evaluation date.")
         return
 
-    st.write(f"**{len(emails)} email(s)** ready for evaluation date {ss.eval_date:%d %b %Y}.")
-    st.dataframe(pd.DataFrame([{"SE": e.se_name, "Email": e.se_email, "Sub-divisions": ", ".join(e.subdivisions),
-                                "Suspected cases": e.n_flagged, "kWh at risk": round(e.kwh_at_risk)} for e in emails]),
+    st.subheader("2 · Choose how to deliver")
+    modes = [f"Demo: send every list to {shown(DEMO_INBOX) or 'the demo inbox'}", "Production: send each SE their own list"]
+    mode = st.radio("Delivery", modes, key="delivery_mode", label_visibility="collapsed")
+    demo = mode == modes[0]
+    if demo and not DEMO_INBOX:
+        st.info("No demo inbox is configured. Set `MAIL_TO` in the server's settings (Secrets on Streamlit Cloud).")
+    elif demo:
+        st.caption("Each email is still written for its SE, but delivered to the demo inbox with [TEST] in the "
+                   "subject, so the real-time email can be shown without contacting anyone.")
+    elif not SE_DELIVERY_ALLOWED:
+        st.info("Production delivery is switched off on this public demo, because anyone opening the page could "
+                "otherwise send email to any address from the project's account. On a private deployment, set "
+                "`ALLOW_SE_DELIVERY=true` in the server's settings to enable it.", icon="🔒")
+
+    st.subheader("3 · Review and send")
+    st.write(f"**{len(emails)} email(s)** for the check as of {ss.eval_date:%d %b %Y}.")
+    st.dataframe(pd.DataFrame([{"SE": e.se_name, "Delivered to": shown(DEMO_INBOX if demo else e.se_email),
+                                "Sub-divisions": ", ".join(e.subdivisions), "Suspected cases": e.n_flagged,
+                                "kWh at risk": round(e.kwh_at_risk)} for e in emails]),
                  width="stretch", hide_index=True)
     for e in emails:
-        with st.expander(f"Preview: {e.se_name} <{e.se_email}>"):
-            st.write(f"**Subject:** {e.subject}")
+        with st.expander(f"Preview: {e.se_name} <{shown(e.se_email)}>"):
+            st.write(f"**Subject:** {'[TEST] ' if demo else ''}{e.subject}")
             st.html(e.html)
 
-    # Credentials and recipient are server-side only (.env locally, st.secrets on Streamlit Cloud).
-    # They are never put in a widget: widget values are sent to the visitor's browser.
+    # Credentials are server-side only (.env locally, Secrets on Streamlit Cloud), never in a widget.
     user = os.getenv("SMTP_USER", "").strip()
     pwd = os.getenv("SMTP_PASSWORD", "")
-    mail_to = os.getenv("MAIL_TO", "").strip() or user
-    st.subheader("Send")
     if not (user and pwd):
         st.info("Sending is not configured on this server. The preview above is what would be sent.")
         return
 
+    # Safe to show: the sender masked, and only whether the password has an App Password's shape.
+    key = "".join(pwd.split())
+    shape = ("looks like a Gmail App Password (16 letters)" if len(key) == 16 and key.isalpha()
+             else f"does not look like a Gmail App Password (expected 16 letters, found {len(key)} characters)")
+    st.caption(f"Sending from {mask(user)} · password {shape}.")
     used = sends_today()
-    st.caption(f"Delivered to {mask(mail_to)} · {used} of {DAILY_SEND_LIMIT} sends used today.")
-    if st.button("Send to my inbox", type="primary", disabled=used + len(emails) > DAILY_SEND_LIMIT):
+    over = used + len(emails) > DAILY_SEND_LIMIT
+    blocked = over or (demo and not DEMO_INBOX) or (not demo and not SE_DELIVERY_ALLOWED)
+    label = f"Send to {shown(DEMO_INBOX)}" if demo else f"Send to {len(emails)} SE(s)"
+    st.caption(f"{used} of {DAILY_SEND_LIMIT} sends used today.")
+    if st.button(label, type="primary", disabled=blocked):
         with st.spinner("Sending…"):
-            ss.last_result = send_emails(emails, ss.eval_date, cfg, user, pwd, LOG_PATH, override_to=mail_to)
-    if used + len(emails) > DAILY_SEND_LIMIT:
+            ss.last_result = send_emails(emails, ss.eval_date, cfg, user, pwd, LOG_PATH,
+                                         override_to=DEMO_INBOX if demo else None)
+    if over:
         st.warning("Today's sending limit is reached. Try again tomorrow.")
 
     if ss.get("last_result") is not None:
@@ -891,9 +927,69 @@ def step_send():
             st.dataframe(masked(pd.read_csv(LOG_PATH, dtype=str)), width="stretch", hide_index=True)
 
 
+def officer_directory() -> pd.DataFrame | None:
+    """Who receives each sub-division's list: edit in place or upload a CSV. Returns the valid list, or None."""
+    st.subheader("1 · SE directory")
+    st.write("Who receives each sub-division's list. In production this is the utility's officer list: add, change "
+             "or remove rows here, or upload it as a CSV with the columns `subdivision_id`, `se_name`, `se_email`.")
+    ss.setdefault("officer_ver", 0)
+    if "officer_base" not in ss:
+        ss.officer_base = default_officers(ss.sd_id)
+
+    edited = st.data_editor(
+        masked_officers(ss.officer_base), num_rows="dynamic", width="stretch", hide_index=True, key=f"officers_{ss.officer_ver}",
+        column_config={"subdivision_id": st.column_config.TextColumn("Sub-division", required=True),
+                       "se_name": st.column_config.TextColumn("SE name", required=True),
+                       "se_email": st.column_config.TextColumn("SE email", required=True)})
+
+    c = st.columns([2, 1, 1], vertical_alignment="bottom")
+    up = c[0].file_uploader("Upload officer list (CSV)", type="csv", key=f"officer_upload_{ss.officer_ver}")
+    template = default_officers(ss.sd_id).assign(se_email="se.name@utility.example")
+    c[1].download_button("Template CSV", template.to_csv(index=False), width="stretch",
+                         file_name="officers_template.csv", mime="text/csv")
+    if c[2].button("Reset to default", width="stretch"):
+        replace_directory(default_officers(ss.sd_id))
+    if up is not None:
+        df, errors = parse(pd.read_csv(up, dtype=str), "officers")
+        if errors:
+            st.error("The uploaded list was not used: " + "; ".join(errors))
+        else:
+            replace_directory(df)
+
+    officers, errors = parse(unmask_officers(edited.astype("string").fillna("")), "officers")
+    if errors:
+        st.error("Fix the directory before sending: " + "; ".join(errors))
+        return None
+    if not officers.equals(ss.data["officers"]):
+        ss.data["officers"] = officers
+        ss.pop("last_result", None)
+    return officers
+
+
+def replace_directory(df: pd.DataFrame):
+    ss.officer_base = df.reset_index(drop=True)
+    ss.officer_ver += 1  # new editor and uploader keys, so neither replays its old state
+    ss.pop("last_result", None)
+    st.rerun()
+
+
 def mask(addr: str) -> str:
     name, _, domain = str(addr).partition("@")
     return f"{name[:2]}***@{domain}" if domain else "***"
+
+
+def shown(addr: str) -> str:
+    """The demo inbox is the project owner's own address: it is shown masked everywhere, and only used to send."""
+    return mask(addr) if DEMO_INBOX and str(addr).strip().lower() == DEMO_INBOX.lower() else addr
+
+
+def masked_officers(df: pd.DataFrame) -> pd.DataFrame:
+    return df.assign(se_email=df["se_email"].map(shown))
+
+
+def unmask_officers(df: pd.DataFrame) -> pd.DataFrame:
+    """The directory editor shows the demo inbox masked; a row left as that mask still means the demo inbox."""
+    return df.assign(se_email=df["se_email"].replace(mask(DEMO_INBOX), DEMO_INBOX)) if DEMO_INBOX else df
 
 
 def masked(log: pd.DataFrame) -> pd.DataFrame:

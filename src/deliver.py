@@ -146,8 +146,11 @@ def send_emails(emails: list[Email], eval_date: date, cfg: Config, smtp_user: st
                     _login(server, smtp_user.strip(), "".join(smtp_password.split()))
                 server.send_message(msg)
                 results.append({**row, "status": "TEST_SENT" if override_to else "SENT"})
-            except smtplib.SMTPAuthenticationError:
-                results.append({**row, "status": "FAILED", "error": AUTH_HELP})
+            except smtplib.SMTPAuthenticationError as exc:
+                # Keep Gmail's own reply: 535 (wrong address/password pair) and 534 (normal password used
+                # where an App Password is required) need different fixes.
+                reply = exc.smtp_error.decode(errors="replace") if isinstance(exc.smtp_error, bytes) else str(exc.smtp_error)
+                results.append({**row, "status": "FAILED", "error": f"{AUTH_HELP} Server said: {exc.smtp_code} {reply}"})
                 server = None
             except Exception as exc:  # log every failure per recipient and carry on
                 results.append({**row, "status": "FAILED", "error": f"{type(exc).__name__}: {exc}"})
