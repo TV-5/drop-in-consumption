@@ -45,6 +45,12 @@ SEED = 7
 MIN_DAYS = cfg.baseline_days + cfg.baseline_gap_days + cfg.current_window_days
 
 
+def start_over():
+    """Back to an empty Generate data page: drops the data, results, sends and every widget's state."""
+    for k in list(ss.keys()):
+        del ss[k]
+
+
 def go(step: str):
     ss.step = step
 
@@ -82,10 +88,15 @@ def stepper():
   @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap');
   /* Dark app bar: Streamlit's own top bar, recoloured, with the project title drawn into it. */
   [data-testid="stHeader"] { background: #151821 !important; }
-  [data-testid="stHeader"]::before {
-    content: "Consumption-drop detection"; position: absolute; left: 5rem; top: 50%; transform: translateY(-50%);
-    font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.3rem; letter-spacing: -.01em; color: #fff;
-    max-width: calc(100% - 15rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The title is a real button laid over the bar: clicking it starts over. */
+  .st-key-home { position: fixed; top: 0; left: 5rem; height: 3.75rem; z-index: 999992; display: flex;
+                 align-items: center; max-width: calc(100% - 20rem); }
+  .st-key-home button { background: transparent !important; border: none !important; padding: 0 !important;
+                        min-height: 0 !important; box-shadow: none !important; }
+  .st-key-home button p { font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.3rem;
+                          letter-spacing: -.01em; color: #fff !important; white-space: nowrap; overflow: hidden;
+                          text-overflow: ellipsis; }
+  .st-key-home button:hover p { opacity: .85; }
   [data-testid="stHeader"] button, [data-testid="stHeader"] a, [data-testid="stHeader"] span,
   [data-testid="stHeader"] svg { color: #fff !important; }
   [data-testid="stAppDeployButton"] button { border: 1px solid rgba(255,255,255,.3) !important; border-radius: 8px; }
@@ -128,7 +139,8 @@ def stepper():
   [class*="st-key-stepper"] button:disabled { opacity: .7; }
   [class*="st-key-stepper"] button:not(:disabled):hover p { text-decoration: underline; }
   @media (max-width: 640px) {
-    [data-testid="stHeader"]::before { left: 1rem; font-size: 1.05rem; max-width: calc(100% - 8rem); }
+    .st-key-home { left: 1rem; max-width: calc(100% - 8rem); }
+    .st-key-home button p { font-size: 1.05rem; }
     [class*="st-key-stepper"] button p { font-size: .78rem; }
     [class*="st-key-stepper"] button p span { display: none; }
   }
@@ -1004,7 +1016,8 @@ def sends_today() -> int:
     return int((log["sent_at"].str[:10] == date.today().isoformat()).sum())
 
 
-# Both tracks are drawn after the page so they reflect what this run just did (generated, detected, sent).
+st.button("Consumption-drop detection", key="home", type="tertiary", help="Start over", on_click=start_over)
+# The progress track and footer are drawn after the page so they reflect what this run just did (generated, detected, sent).
 ribbon = st.container(key="stepper_top")
 {STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
 with ribbon:
