@@ -1,3 +1,8 @@
 [theme]
-# Light by default, whatever the viewer's system setting. Viewers can still switch in the app menu (⋮ > Settings).
+# Light by default, whatever the viewer's system setting.
 base = "light"
+
+[client]
+# Drop Streamlit's built-in menu items (Rerun, Clear cache, Print, Record screen, Settings) and the local Deploy
+# button; only items added by Streamlit Community Cloud itself remain.
+toolbarMode = "minimal"
