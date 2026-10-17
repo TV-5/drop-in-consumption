@@ -3,7 +3,7 @@
 Run with:  streamlit run app.py
 """
 import os
-import re
+from datetime import date
 from pathlib import Path
 
 import altair as alt
@@ -23,6 +23,7 @@ from src.suppress import SUPPRESSION_CODES
 
 ROOT = Path(__file__).parent
 LOG_PATH = ROOT / "delivery_log.csv"
+DAILY_SEND_LIMIT = 20
 STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
 
 load_dotenv(ROOT / ".env")
@@ -397,17 +398,9 @@ def step_send():
         return
 
     st.subheader("Recipient")
-    officers = ss.data["officers"]
-    se = officers.iloc[0]
-    st.caption(f"The list for {hierarchy.label(ss.sd_id)} goes to {se['se_name']}. "
-               "Put your own address here if you want to receive it.")
-    addr = st.text_input("SE email", value=se["se_email"]).strip()
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", addr):
-        st.error("Enter a valid email address.")
-        return
-    if addr != se["se_email"]:
-        ss.data["officers"] = officers.assign(se_email=addr)
-        ss.pop("last_result", None)
+    se = ss.data["officers"].iloc[0]
+    st.caption(f"The list for {hierarchy.label(ss.sd_id)} is addressed to {se['se_name']}. This is a demo, so every "
+               "email is delivered to the project owner's inbox, never to the SE address.")
 
     emails, unmapped = build_emails(ss.scores, ss.data["officers"], ss.eval_date)
     if unmapped:
@@ -425,40 +418,49 @@ def step_send():
             st.write(f"**Subject:** {e.subject}")
             st.html(e.html)
 
-    st.subheader("SMTP")
-    user = os.getenv("SMTP_USER", "")
+    # Credentials and recipient are server-side only (.env locally, st.secrets on Streamlit Cloud).
+    # They are never put in a widget: widget values are sent to the visitor's browser.
+    user = os.getenv("SMTP_USER", "").strip()
     pwd = os.getenv("SMTP_PASSWORD", "")
-    st.caption(f"Server {cfg.smtp.host}:{cfg.smtp.port} (config.yaml). Credentials from .env "
-               "(SMTP_USER, SMTP_PASSWORD); for Gmail use an App Password.")
-    c1, c2 = st.columns(2)
-    user = c1.text_input("SMTP user (sender address)", value=user)
-    pwd = c2.text_input("SMTP password", value=pwd, type="password")
+    mail_to = os.getenv("MAIL_TO", "").strip() or user
+    st.subheader("Send")
     if not (user and pwd):
-        st.info("Enter SMTP credentials (or set them in .env) to send.")
+        st.info("Sending is not configured on this server. The preview above is what would be sent.")
         return
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Test send**: every SE's email goes to one address you choose.")
-        test_to = st.text_input("Test recipient", value=user)
-        if st.button("Send test"):
-            with st.spinner("Sending test emails…"):
-                ss.last_result = send_emails(emails, ss.eval_date, cfg, user, pwd, LOG_PATH, override_to=test_to)
-    with c2:
-        st.markdown("**Send to SEs**: each SE gets their own list. Already-sent SEs are skipped.")
-        ok = st.checkbox("I have reviewed the list and want to send it to the SEs")
-        if st.button("Send to all SEs", type="primary", disabled=not ok):
-            with st.spinner("Sending…"):
-                ss.last_result = send_emails(emails, ss.eval_date, cfg, user, pwd, LOG_PATH)
+    used = sends_today()
+    st.caption(f"Delivered to {mask(mail_to)} · {used} of {DAILY_SEND_LIMIT} sends used today.")
+    if st.button("Send to my inbox", type="primary", disabled=used + len(emails) > DAILY_SEND_LIMIT):
+        with st.spinner("Sending…"):
+            ss.last_result = send_emails(emails, ss.eval_date, cfg, user, pwd, LOG_PATH, override_to=mail_to)
+    if used + len(emails) > DAILY_SEND_LIMIT:
+        st.warning("Today's sending limit is reached. Try again tomorrow.")
 
     if ss.get("last_result") is not None:
         res = ss.last_result
         sent = res["status"].isin(["SENT", "TEST_SENT"]).sum()
         (st.success if sent == len(res) else st.warning)(f"{sent} of {len(res)} sent.")
-        st.dataframe(res, width="stretch", hide_index=True)
+        st.dataframe(masked(res), width="stretch", hide_index=True)
     if LOG_PATH.exists():
         with st.expander("Full delivery log"):
-            st.dataframe(pd.read_csv(LOG_PATH, dtype=str), width="stretch", hide_index=True)
+            st.dataframe(masked(pd.read_csv(LOG_PATH, dtype=str)), width="stretch", hide_index=True)
+
+
+def mask(addr: str) -> str:
+    name, _, domain = str(addr).partition("@")
+    return f"{name[:2]}***@{domain}" if domain else "***"
+
+
+def masked(log: pd.DataFrame) -> pd.DataFrame:
+    return log.assign(se_email=log["se_email"].map(mask), sent_to=log["sent_to"].map(mask))
+
+
+def sends_today() -> int:
+    """Emails attempted today across all visitors, so a public demo cannot flood the inbox."""
+    if not LOG_PATH.exists():
+        return 0
+    log = pd.read_csv(LOG_PATH, dtype=str)
+    return int((log["sent_at"].str[:10] == date.today().isoformat()).sum())
 
 
 {STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
