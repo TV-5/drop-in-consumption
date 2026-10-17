@@ -6,13 +6,14 @@ from .config import Config
 
 
 def windows(eval_date: date, cfg: Config) -> dict[str, pd.Timestamp]:
-    """Inclusive bounds of the baseline and current windows."""
+    """Inclusive bounds, oldest first: baseline, then baseline_gap_days skipped, then the current window."""
     ev = pd.Timestamp(eval_date)
-    baseline_end = ev - pd.Timedelta(days=cfg.baseline_gap_days + 1)
+    current_start = ev - pd.Timedelta(days=cfg.current_window_days - 1)
+    baseline_end = current_start - pd.Timedelta(days=cfg.baseline_gap_days + 1)
     return {
         "baseline_start": baseline_end - pd.Timedelta(days=cfg.baseline_days - 1),
         "baseline_end": baseline_end,
-        "current_start": ev - pd.Timedelta(days=cfg.current_window_days - 1),
+        "current_start": current_start,
         "current_end": ev,
     }
 
@@ -20,7 +21,7 @@ def windows(eval_date: date, cfg: Config) -> dict[str, pd.Timestamp]:
 def build_baselines(daily: pd.DataFrame, eval_date: date, cfg: Config) -> pd.DataFrame:
     """One row per meter: baseline_daily_kwh, days_covered, window bounds.
 
-    Window ends cfg.baseline_gap_days before eval_date and runs back
+    Window ends cfg.baseline_gap_days before the current window starts and runs back
     cfg.baseline_days. The gap is load-bearing: without it a slow-onset
     bypass contaminates its own reference.
 

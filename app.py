@@ -84,16 +84,26 @@ def step_generate():
     show_hierarchy(sd_id)
 
     st.subheader("Set up the data")
+    st.info("**Why the data is generated here.** This demo creates realistic meter readings so the analysis can "
+            "be shown end to end. On top of normal usage, we deliberately inject different patterns into some "
+            "meters, such as a meter bypass, a vacant house, new rooftop solar or a meter that stopped "
+            "communicating, so every scenario the pipeline must handle is covered.\n\n"
+            "**In real life** there is no generation step. Readings come straight from the utility's live meter "
+            "database, and this service runs in batches (for example, once a week) to produce the inspection list.",
+            icon="ℹ️")
     st.write(f"Data is generated for all **{hierarchy.SUBDIVISIONS[sd_id]['meters']:,} smart meters** installed in "
              f"{hierarchy.SUBDIVISIONS[sd_id]['name']}. Choose how much history to create.")
-    with st.form("gen"):
-        c = st.columns(2)
-        days = c[0].number_input("Days of history", MIN_DAYS, 365, 180, step=10,
-                                 help=f"At least {MIN_DAYS}: {cfg.baseline_days}-day baseline + "
-                                      f"{cfg.baseline_gap_days}-day gap + {cfg.current_window_days}-day current window.")
-        end = c[1].date_input("Last reading date", value=pd.Timestamp("2026-10-04"),
-                              help="The most recent day of readings. Detection is normally run for this date.")
-        submitted = st.form_submit_button(f"Generate data for {hierarchy.SUBDIVISIONS[sd_id]['name']}", type="primary")
+    # Not a form: the timeline below has to follow the date as it is picked.
+    c = st.columns(2)
+    days = c[0].number_input("Days of history", MIN_DAYS, 365, 180, step=10,
+                             help=f"At least {MIN_DAYS} days, so every meter has a full 'before' and 'now' period.")
+    end = c[1].date_input("Last reading date", value=pd.Timestamp("2026-10-04"),
+                          help="The most recent day of readings. Step 2 runs the check as of this date by default.")
+    with st.container(border=True):
+        show_windows(end, pd.Timestamp(end) - pd.Timedelta(days=int(days) - 1), end,
+                     lead=f"**How the {int(days)} days of history are used.** In Step 2 the check runs as of the "
+                          "last reading date by default, and compares the 'before' and 'now' periods:")
+    submitted = st.button(f"Generate data for {hierarchy.SUBDIVISIONS[sd_id]['name']}", type="primary")
 
     if submitted:
         with st.spinner("Generating meters…"):
@@ -106,6 +116,7 @@ def step_generate():
         ss.truth = data["ground_truth"]
         ss.sd_id = sd_id
         ss.scores = None  # new data invalidates any previous run
+        ss.preview = None
         ss.pop("last_result", None)
 
     if not all_loaded():
@@ -118,37 +129,60 @@ def step_generate():
     st.success(f"Data generated for {hierarchy.label(ss.sd_id)}.")
     explain_data()
     explain_scenarios()
-    st.button("Next: detect suspected thefts →", type="primary", on_click=go, args=(STEPS[1],))
+    show_example()
 
 
 def show_hierarchy(sd_id: str):
     sd = hierarchy.SUBDIVISIONS[sd_id]
     div = hierarchy.DIVISIONS[sd["division"]]
     net = hierarchy.network(sd_id)
-    c1, c2 = st.columns(2)
-    with c1.container(border=True):
-        st.markdown("**Office hierarchy**")
-        st.metric("Installed smart meters", f"{sd['meters']:,}")
+    n_feeders, n_dts = net["feeder_id"].nunique(), len(net)
+    st.html(f"""
+<style>
+  .net-flow {{ display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 8px; }}
+  .net-box {{ flex: 1 1 140px; min-width: 0; padding: 14px 16px; border-radius: 12px;
+             border: 1px solid rgba(42,120,214,.35); background: rgba(42,120,214,.08); }}
+  .net-num {{ font-size: 2rem; font-weight: 700; line-height: 1.1; color: #2a78d6; }}
+  .net-lbl {{ font-size: .95rem; font-weight: 600; }}
+  .net-sub {{ font-size: .8rem; opacity: .75; }}
+  .net-arrow {{ font-size: 1.4rem; opacity: .5; }}
+  @media (max-width: 640px) {{ .net-flow {{ flex-direction: column; align-items: stretch; }}
+                               .net-arrow {{ transform: rotate(90deg); text-align: center; }} }}
+</style>
+<div class="net-flow">
+  <div class="net-box"><div class="net-num">{sd['meters']:,}</div><div class="net-lbl">smart meters</div>
+    <div class="net-sub">one in every home or shop</div></div>
+  <div class="net-arrow">→</div>
+  <div class="net-box"><div class="net-num">{n_feeders}</div><div class="net-lbl">feeders</div>
+    <div class="net-sub">11 kV lines that carry power into the area</div></div>
+  <div class="net-arrow">→</div>
+  <div class="net-box"><div class="net-num">{n_dts}</div><div class="net-lbl">transformers (DTs)</div>
+    <div class="net-sub">the pole transformers each street hangs off</div></div>
+</div>""")
+    st.write(f"In plain words: the **{sd['meters']:,} meters** in {sd['name']} get their power through "
+             f"**{n_feeders} feeders**, and those feeders split into **{n_dts} transformers**. That works out to "
+             f"about **{sd['meters'] // n_dts} meters per transformer**. Homes on the same transformer are "
+             "neighbours, so the pipeline compares each meter with them.")
+
+    with st.expander("See the full network: substations, feeders and transformers"):
+        by_feeder = (net.groupby(["substation_id", "feeder_id"], sort=False)
+                     .agg(Transformers=("dt_id", "size"), Meters=("meters", "sum")).reset_index()
+                     .rename(columns={"substation_id": "Substation", "feeder_id": "Feeder"}))
+        st.markdown(f"**{net['substation_id'].nunique()} substations → {n_feeders} feeders → {n_dts} transformers**")
+        st.dataframe(by_feeder, width="stretch", hide_index=True)
+        feeder = st.selectbox("Pick a feeder to see its transformers", by_feeder["Feeder"], key="feeder_pick")
+        dts = net[net["feeder_id"] == feeder]
+        st.caption(f"{feeder} serves {dts['meters'].sum():,} meters through {len(dts)} transformers.")
+        st.dataframe(dts[["dt_id", "meters"]].rename(columns={"dt_id": "Transformer (DT)", "meters": "Meters"}),
+                     width="stretch", hide_index=True)
+
+    with st.expander("See the office hierarchy: who is responsible for this area"):
         st.markdown("\n".join([
             f"- **Circle** · {hierarchy.CIRCLE['name']} ({hierarchy.CIRCLE['id']}) · {hierarchy.CIRCLE['se_name']}",
             f"    - **Division** · {div['name']} ({sd['division']}) · {div['ee_name']}",
             f"        - **Sub-division** · {sd['name']} ({sd_id}) · {sd['ae_name']}",
         ]))
         st.caption("The inspection list for this sub-division is emailed to the circle SE in Step 3.")
-    with c2.container(border=True):
-        st.markdown("**Network hierarchy**")
-        lines = []
-        for ss_id, feeders in net.groupby("substation_id", sort=False):
-            lines.append(f"- **{ss_id}** (33/11 kV substation): {feeders['meters'].sum():,} meters")
-            for feeder, dts in feeders.groupby("feeder_id", sort=False):
-                lines.append(f"    - **{feeder}** (11 kV feeder): {dts['meters'].sum():,} meters on {len(dts)} DTs, "
-                             f"{dts['dt_id'].iloc[0]} to {dts['dt_id'].iloc[-1]}")
-        st.markdown("\n".join(lines))
-        st.caption(f"{net['substation_id'].nunique()} substations · {net['feeder_id'].nunique()} feeders · "
-                   f"{len(net)} distribution transformers · {net['meters'].sum():,} meters")
-        with st.expander("Meters per transformer"):
-            st.dataframe(net.rename(columns={"dt_id": "DT", "feeder_id": "Feeder", "substation_id": "Substation",
-                                             "meters": "Meters"}), width="stretch", hide_index=True)
 
 
 def explain_data():
@@ -171,13 +205,37 @@ def explain_data():
         st.dataframe(ss.data["master"], width="stretch", hide_index=True, height=220)
     with t3:
         st.write("Which Superintending Engineer (SE) receives this sub-division's weekly list of suspected "
-                 "cases. You can change the address in Step 3 before sending.")
+                 "cases. In this demo, Step 3 delivers the email to the project owner's inbox instead.")
         show_summary("officers", ss.data["officers"])
         st.dataframe(ss.data["officers"], width="stretch", hide_index=True)
 
 
 def explain_scenarios():
     st.subheader("Scenarios the data covers")
+    t = cfg.excess_drop_threshold_pct
+    st.html(f"""
+<style>
+  .rule {{ border: 2px solid #eb6834; background: rgba(235,104,52,.08); border-radius: 12px; padding: 16px 18px; }}
+  .rule-head {{ display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }}
+  .rule-num {{ font-size: 2.4rem; font-weight: 800; color: #eb6834; line-height: 1; }}
+  .rule-title {{ font-size: 1.1rem; font-weight: 700; }}
+  .rule p {{ margin: 10px 0 0; }}
+  .rule ul {{ margin: 6px 0 0; padding-left: 20px; }}
+</style>
+<div class="rule">
+  <div class="rule-head"><span class="rule-num">{t:g}%</span>
+    <span class="rule-title">The flag rule: a drop of more than {t:g} percentage points beyond the neighbours</span></div>
+  <p>A meter is flagged for <b>drop in consumption</b> when its usage has fallen <b>more than {t:g} percentage
+    points further than the other meters on the same transformer</b>.</p>
+  <p><b>Example:</b> if the neighbours used 35% less this month, a meter that used 60% less is 25 points beyond
+    them and gets flagged. A meter that used 50% less is only 15 points beyond them and is left alone.</p>
+  <p>To avoid false alarms, a meter is also left alone when:</p>
+  <ul>
+    <li>the drop is smaller than <b>{cfg.min_drop_kwh_per_day:g} kWh a day</b> (too small to be worth a visit)</li>
+    <li>fewer than <b>{cfg.min_comm_availability_pct:g}%</b> of its readings arrived (the drop may just be missing data)</li>
+    <li>there is an innocent reason: rooftop solar, a vacant house, a new or replaced meter, or a disconnection</li>
+  </ul>
+</div>""")
     st.write("**Every** meter's consumption slides by about 35% from the summer peak into autumn. That "
              "is the trap: a naive \"consumption dropped\" rule would flag the whole town. The pipeline has to "
              "compare each meter with its peers on the same transformer, and only flag drops well beyond theirs.")
@@ -196,24 +254,177 @@ def explain_scenarios():
     st.caption("Only the two bypass scenarios are theft. Every other drop has an innocent explanation, and the "
                "pipeline must recognise it rather than send an engineer to someone's door.")
 
-    kinds = [k for k in SCENARIOS if k != "normal" and k in counts]
-    kind = st.selectbox("See an example meter", kinds, format_func=scenario_label)
-    row = truth[truth["injected_type"] == kind].iloc[0]
-    daily = ss.data["daily"]
-    normal_ids = set(ss.data["master"]["meter_id"]) - set(truth["meter_id"])
+
+def example_kinds() -> list[str]:
+    counts = ss.truth["injected_type"].value_counts()
+    return [k for k in SCENARIOS if k != "normal" and k in counts]
+
+
+def example_for(kind: str) -> tuple[pd.Series, pd.Series]:
+    """(ground-truth row, detection result) for the first meter injected with this scenario."""
+    row = ss.truth[ss.truth["injected_type"] == kind].iloc[0]
+    res = preview_scores(ss.data["daily"]["reading_date"].max().date())
+    return row, res[res["meter_id"] == row["meter_id"]].iloc[0]
+
+
+def show_example():
+    """Faded teaser by default, so moving on is one obvious click; the full walk-through is opt-in."""
+    ss.setdefault("show_example", False)
+    st.subheader("See an example meter")
+    if not ss.show_example:
+        kind = example_kinds()[0]
+        row, res = example_for(kind)
+        st.html(f"""
+<style>
+  .teaser {{ -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 35%, transparent 100%); max-height: 170px; overflow: hidden; }}
+  .teaser p {{ margin: 0 0 10px; line-height: 1.55; }}
+</style>
+<div class="teaser">
+  <p>Follow one meter from the data, step by step: who it belongs to, what it used to use, what it uses now,
+    and <b>exactly where on its chart the pipeline flagged it</b>, or why it decided to leave it alone.</p>
+  <p><b>{scenario_label(kind)}, meter {row['meter_id']}:</b> {decision_text(res, html=True)}</p>
+</div>""")
+        c = st.columns(2)
+        c[0].button("Read the full example ↓", width="stretch", on_click=lambda: ss.update(show_example=True))
+        c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
+        return
+
+    kind = st.selectbox("Pick a scenario", example_kinds(), format_func=scenario_label)
+    row, res = example_for(kind)
+    meter_id = row["meter_id"]
+    daily, master = ss.data["daily"], ss.data["master"]
+    eval_date = daily["reading_date"].max().date()
+    st.caption(f"Detection result as of the last reading date, {eval_date:%d %b %Y}. "
+               "Step 2 lets you run it for another date.")
+
+    show_meter_card(master[master["meter_id"] == meter_id].iloc[0])
+    show_verdict(res)
+    show_example_chart(kind, row, res, eval_date)
+
+    with st.expander(f"Daily readings for meter {meter_id}"):
+        st.dataframe(daily[daily["meter_id"] == meter_id].sort_values("reading_date", ascending=False)
+                     .rename(columns={"reading_date": "Date", "kwh_import": "kWh used",
+                                      "intervals_expected": "Readings expected", "intervals_received": "Readings arrived",
+                                      "voltage_present_pct": "Supply on (%)"}).drop(columns="meter_id"),
+                     width="stretch", hide_index=True, height=260)
+    c = st.columns(2)
+    c[0].button("Hide the example ↑", width="stretch", on_click=lambda: ss.update(show_example=False))
+    c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
+
+
+def show_example_chart(kind: str, row: pd.Series, res: pd.Series, eval_date):
+    daily, master = ss.data["daily"], ss.data["master"]
+    meter_id = row["meter_id"]
+    w = windows(eval_date, cfg)
+    normal_ids = set(master["meter_id"]) - set(ss.truth["meter_id"])
     typical = (daily[daily["meter_id"].isin(normal_ids)].groupby("reading_date")["kwh_import"].median()
-               .reset_index().assign(series="Typical normal meter (median)"))
-    example = daily.loc[daily["meter_id"] == row["meter_id"], ["reading_date", "kwh_import"]].assign(
-        series=f"Meter {row['meter_id']}")
-    chart = alt.Chart(pd.concat([typical, example])).mark_line(strokeWidth=2).encode(
+               .reset_index().assign(series="Typical normal meter"))
+    example = daily.loc[daily["meter_id"] == meter_id, ["reading_date", "kwh_import"]].assign(
+        series=f"Meter {meter_id}")
+    bands = alt.Chart(pd.DataFrame([
+        {"start": w["baseline_start"], "end": w["baseline_end"], "window": "Before (baseline)"},
+        {"start": w["current_start"], "end": w["current_end"], "window": "Now (current)"},
+    ])).mark_rect(opacity=0.12).encode(
+        x="start:T", x2="end:T",
+        fill=alt.Fill("window:N", title=None, legend=alt.Legend(orient="bottom"),
+                      scale=alt.Scale(range=["#2a78d6", "#eb6834"])))
+    lines = alt.Chart(pd.concat([typical, example])).mark_line(strokeWidth=2).encode(
         x=alt.X("reading_date:T", title=None), y=alt.Y("kwh_import:Q", title="kWh per day"),
-        color=alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
-                        scale=alt.Scale(range=["#2a78d6", "#8a8984"])),
+        stroke=alt.Stroke("series:N", title=None, legend=alt.Legend(orient="top"),
+                          scale=alt.Scale(range=["#1a1a1a", "#8a8984"])),
         tooltip=[alt.Tooltip("reading_date:T", format="%d %b %Y"), alt.Tooltip("kwh_import:Q", format=".2f")])
-    onset = alt.Chart(pd.DataFrame({"d": [pd.Timestamp(row["onset_date"])]})).mark_rule(
-        strokeDash=[2, 2], color="#eb6834").encode(x="d:T")
-    st.altair_chart((chart + onset).properties(height=260), width="stretch")
-    st.caption(f"{SCENARIOS[kind][0]} The dotted line marks when it was injected. Expected outcome: {SCENARIOS[kind][1]}.")
+    # Legend instead of on-chart text: the two dates are often days apart and the labels would overlap.
+    marks = [{"d": pd.Timestamp(row["onset_date"]), "event": "Problem injected"}]
+    if res["status"] == "FLAGGED" and pd.notna(res["onset_date"]):
+        marks.append({"d": pd.Timestamp(res["onset_date"]), "event": "⚑ Flagged: drop starts here"})
+    rules = alt.Chart(pd.DataFrame(marks)).mark_rule(strokeDash=[4, 3], strokeWidth=2.5).encode(
+        x="d:T", tooltip=[alt.Tooltip("event:N", title="Event"), alt.Tooltip("d:T", title="Date", format="%d %b %Y")],
+        color=alt.Color("event:N", title=None, legend=alt.Legend(orient="bottom"),
+                        scale=alt.Scale(domain=["Problem injected", "⚑ Flagged: drop starts here"],
+                                        range=["#8a8984", "#d62728"])))
+    layers = [bands, lines, rules]
+    if pd.notna(res["baseline_daily_kwh"]):
+        levels = [{"start": w["baseline_start"], "end": w["baseline_end"], "y": res["baseline_daily_kwh"]}]
+        if pd.notna(res["peer_drop_pct"]):
+            levels.append({"start": w["current_start"], "end": w["current_end"],
+                           "y": res["baseline_daily_kwh"] * (1 - res["peer_drop_pct"] / 100)})
+        layers.append(alt.Chart(pd.DataFrame(levels)).mark_rule(strokeWidth=3, color="#2a78d6").encode(
+            x="start:T", x2="end:T", y="y:Q"))
+    chart = alt.layer(*layers).resolve_scale(color="independent", fill="independent", stroke="independent")
+    st.altair_chart(chart.properties(height=300), width="stretch")
+    st.caption(f"{SCENARIOS[kind][0]} Thick blue lines: what the meter used to use, and what it would use now "
+               f"if it had dropped only as much as its neighbours. Expected outcome: {SCENARIOS[kind][1]}.")
+
+
+def preview_scores(eval_date) -> pd.DataFrame:
+    """Detection run used only to explain the example meters in Step 1. Cleared whenever data is regenerated."""
+    if ss.get("preview") is None:
+        ss.preview = run_pipeline(ss.data["daily"], ss.data["master"], eval_date, cfg)
+    return ss.preview
+
+
+def show_meter_card(m: pd.Series):
+    with st.container(border=True):
+        st.markdown(f"**Meter {m['meter_id']}** · consumer {m['consumer_id']}")
+        c = st.columns(3)
+        c[0].markdown(f"Transformer  \n**{m['dt_id']}**")
+        c[1].markdown(f"Tariff · load  \n**{m['tariff_category']} · {m['sanctioned_load_kw']:g} kW**")
+        c[2].markdown(f"Connection  \n**{m['status']}**")
+        c = st.columns(3)
+        c[0].markdown(f"Meter installed  \n**{pd.Timestamp(m['meter_installed_on']):%d %b %Y}**")
+        c[1].markdown(f"Phase  \n**{m['phase_type']}**")
+        c[2].markdown(f"Rooftop solar  \n**{'Yes' if m['has_registered_der'] else 'No'}**")
+
+
+def show_verdict(r: pd.Series):
+    def num(v, fmt):
+        return "n/a" if pd.isna(v) else format(v, fmt)
+    status = r["status"]
+    if status == "FLAGGED":
+        st.error(f"**⚑ FLAGGED for inspection.** {r['reason_text']}")
+    elif status == "SUPPRESSED":
+        st.warning(f"**Not flagged: {r['suppression_code']}.** {SUPPRESSION_CODES[r['suppression_code']]}.")
+    else:
+        st.success("**Not flagged.** Its drop is in line with the neighbours on its transformer.")
+    c = st.columns(4)
+    c[0].metric("Used to use", num(r["baseline_daily_kwh"], ".1f") + " kWh/day")
+    c[1].metric("Uses now", num(r["current_daily_kwh"], ".1f") + " kWh/day",
+                None if pd.isna(r["drop_pct"]) else f"-{r['drop_pct']:.0f}%")
+    c[2].metric("Neighbours' drop", num(r["peer_drop_pct"], ".0f") + "%",
+                help="Typical drop of the other meters on the same transformer. Mostly the season.")
+    c[3].metric("Readings arrived", num(r["comm_availability_pct"], ".0f") + "%",
+                help=f"Share of the meter's readings that reached the system. Below "
+                     f"{cfg.min_comm_availability_pct:g}% the drop may just be missing data.")
+    with st.container(border=True):
+        st.markdown("**How the decision was made**  \n" + decision_text(r))
+
+
+def decision_text(r: pd.Series, html: bool = False) -> str:
+    """The flag rule applied to one meter, in plain words."""
+    b = (lambda t: f"<b>{t}</b>") if html else (lambda t: f"**{t}**")
+    t, floor = cfg.excess_drop_threshold_pct, cfg.min_drop_kwh_per_day
+    if pd.isna(r["drop_pct"]) or pd.isna(r["peer_drop_pct"]):
+        return (f"There is not enough history to compare this meter against, so it is {b('not flagged')} "
+                f"({SUPPRESSION_CODES.get(r['suppression_code'], '').lower() or 'no baseline'}).")
+    me, peers, extra = r["drop_pct"], r["peer_drop_pct"], r["excess_drop_pct"]
+    s = (f"It now uses {b(f'{me:.0f}% less')} than before ({r['baseline_daily_kwh']:.1f} → "
+         f"{r['current_daily_kwh']:.1f} kWh a day). Its neighbours on the same transformer use "
+         f"{b(f'{peers:.0f}% less')}, which is the normal seasonal dip. ")
+    if extra > 0:
+        s += f"So it fell {b(f'{extra:.0f} percentage points more')} than its neighbours. "
+    else:
+        s += f"So it fell {b('no more than its neighbours')}. "
+    over = extra > t
+    s += f"The limit is {t:g} points, so this is {b('over the limit' if over else 'within the limit')}. "
+    if r["status"] == "FLAGGED":
+        return s + f"The drop is also {r['drop_kwh_per_day']:.1f} kWh a day (more than the {floor:g} kWh minimum), " \
+                   f"so it is {b('⚑ flagged for inspection')}."
+    if r["status"] == "SUPPRESSED":
+        why = SUPPRESSION_CODES[r["suppression_code"]].lower()
+        return s + (f"But it is {b('not flagged')}: {why}." if over else
+                    f"It is {b('not flagged')} ({why}).")
+    return s + f"It is {b('not flagged')}."
 
 
 def show_summary(kind: str, df: pd.DataFrame):
@@ -236,6 +447,52 @@ def show_summary(kind: str, df: pd.DataFrame):
 
 
 # ---------------------------------------------------------------- step 2
+def show_windows(eval_date, history_start, history_end, lead: str = ""):
+    """Every day of the available readings, split into the periods the check uses for this date.
+
+    Period bounds come from windows() itself, so the picture can never disagree with the pipeline, and the
+    segments always add up to the full history.
+    """
+    w = windows(eval_date, cfg)
+    one = pd.Timedelta(days=1)
+    history_start, history_end = pd.Timestamp(history_start), pd.Timestamp(history_end)
+    # (css class, title, start, end, note); empty periods are dropped.
+    periods = [
+        ("tl-unused", "Not used", history_start, w["baseline_start"] - one, "older readings"),
+        ("tl-before", "Before", w["baseline_start"], w["baseline_end"], "usual use"),
+        ("tl-gap", "Skipped", w["baseline_end"] + one, w["current_start"] - one, "gap"),
+        ("tl-now", "Now", w["current_start"], w["current_end"], "latest use"),
+        ("tl-unused", "Not used", w["current_end"] + one, history_end, "later readings"),
+    ]
+    periods = [(c, t, a, b, n, (b - a).days + 1) for c, t, a, b, n in periods if b >= a]
+    total = sum(p[-1] for p in periods)
+    segs = "".join(f'<div class="{c}" style="flex:{max(d / total, 0.12):.3f} 1 0"><b>{t}</b>'
+                   f'{a:%d %b} – {b:%d %b}<br>{n} ({d} days)</div>' for c, t, a, b, n, d in periods)
+    sums = " + ".join(f"{d} {t.lower()}" for c, t, a, b, n, d in periods)
+    if lead:
+        st.markdown(lead)
+    st.html(f"""
+<style>
+  .tl {{ display: flex; width: 100%; border-radius: 8px; overflow: hidden; font-size: .78rem; line-height: 1.3; }}
+  .tl div {{ padding: 8px 8px; min-width: 0; }}
+  .tl b {{ display: block; font-size: .85rem; }}
+  .tl-unused {{ background: rgba(138,137,132,.10); opacity: .75; }}
+  .tl-before {{ background: rgba(42,120,214,.15); border-left: 4px solid #2a78d6; }}
+  .tl-gap {{ background: repeating-linear-gradient(45deg, rgba(138,137,132,.12) 0 6px, transparent 6px 12px);
+             opacity: .85; }}
+  .tl-now {{ background: rgba(235,104,52,.15); border-right: 4px solid #eb6834; }}
+  @media (max-width: 640px) {{ .tl {{ flex-direction: column; }} }}
+</style>
+<div class="tl">{segs}</div>""")
+    gap_days = (w["current_start"] - w["baseline_end"]).days - 1
+    st.caption(f"**{total} days of readings** ({history_start:%d %b} – {history_end:%d %b %Y}) = {sums}. "
+               f"Checking as of **{eval_date:%d %b %Y}**, each meter's typical daily use in the "
+               f"**now** period is compared with its typical daily use in the **before** period. "
+               + (f"The {gap_days} days in between are skipped, so a theft that starts slowly cannot creep into the "
+                  "'before' figure and hide itself. " if gap_days > 0 else "")
+               + "The period lengths come from config.yaml (baseline_days, baseline_gap_days, current_window_days).")
+
+
 def step_detect():
     st.header("Step 2 · Detect suspected thefts")
     if not all_loaded():
@@ -244,19 +501,20 @@ def step_detect():
         return
     daily, master = ss.data["daily"], ss.data["master"]
     max_d = daily["reading_date"].max().date()
-    min_d = (daily["reading_date"].min() + pd.Timedelta(days=cfg.baseline_days + cfg.baseline_gap_days)).date()
+    min_d = (daily["reading_date"].min() + pd.Timedelta(days=MIN_DAYS - 1)).date()
 
+    st.write("Pick the date to run the check for. It is the **last day of the period being checked**, not a single "
+             "day: the app looks at each meter's last month of use and compares it with its usual use before that.")
     c1, c2 = st.columns([1, 3])
     with c1:
-        eval_date = st.date_input("Evaluation date", value=max_d, min_value=min(min_d, max_d), max_value=max_d)
-        run = st.button("Run detection", type="primary")
+        eval_date = st.date_input("Run the check as of", value=max_d, min_value=min(min_d, max_d), max_value=max_d,
+                                  help="In live use this would simply be today, run once a week.")
+        run = st.button("Run detection", type="primary", width="stretch")
     with c2:
-        w = windows(eval_date, cfg)
-        st.caption(f"Baseline window: {w['baseline_start']:%d %b} – {w['baseline_end']:%d %b %Y} "
-                   f"(median of {cfg.baseline_days} days)  ·  Current window: {w['current_start']:%d %b} – "
-                   f"{w['current_end']:%d %b %Y}")
-        with st.expander("Thresholds (edit config.yaml to change)"):
-            st.json({k: v for k, v in vars(cfg).items() if k != "smtp"})
+        show_windows(eval_date, daily["reading_date"].min(), max_d)
+
+    st.caption(f"Flag rule: a meter is flagged when it dropped more than {cfg.excess_drop_threshold_pct:g} points "
+               f"beyond its neighbours and by at least {cfg.min_drop_kwh_per_day:g} kWh a day (explained in Step 1).")
 
     if run:
         with st.spinner("Scoring meters…"):
