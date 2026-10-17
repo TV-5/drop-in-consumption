@@ -68,42 +68,49 @@ def stepper():
     sub3 = f"{n_sent} sent" if n_sent else ("ready to send" if n_flagged else "needs flagged meters")
     subs = [sub1, sub2, sub3]
     cur = STEPS.index(ss.step)
-    bg = "#0e1117" if st.context.theme.type == "dark" else "#ffffff"
-
-    st.html(f"""
+    st.html("""
 <style>
-  .st-key-stepper {{ position: sticky; top: 3.75rem; z-index: 990; background: {bg};
-                     padding: 6px 0 2px; border-bottom: 1px solid rgba(128,128,128,.2); }}
-  .st-key-stepper [data-testid="stHorizontalBlock"] {{ flex-wrap: nowrap !important; gap: 8px; }}
-  .st-key-stepper [data-testid="stColumn"] {{ min-width: 0 !important; flex: 1 1 0 !important; width: auto !important; }}
-  .st-key-stepper button {{ justify-content: flex-start; border: none !important; border-radius: 0 !important;
-                            background: transparent !important; padding: 4px 2px 6px !important;
-                            border-bottom: 4px solid rgba(138,137,132,.35) !important; }}
-  .st-key-stepper button p {{ font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-  .st-key-stepper [class*="_done"] button {{ border-bottom-color: #1f9d55 !important; }}
-  .st-key-stepper [class*="_done"] button p {{ color: #1f9d55; }}
-  .st-key-stepper [class*="_current"] button {{ border-bottom-color: #2a78d6 !important; }}
-  .st-key-stepper [class*="_current"] button p {{ color: #2a78d6; }}
-  .st-key-stepper button:disabled p {{ opacity: .55; }}
-  .st-key-stepper [data-testid="stCaptionContainer"] {{ margin-top: -10px; }}
-  .stepper-title {{ display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }}
-  .stepper-title b {{ font-size: 1.05rem; }}
-  .stepper-title span {{ font-size: .8rem; opacity: .7; white-space: nowrap; }}
-  @media (max-width: 640px) {{
-    .st-key-stepper button p {{ font-size: .8rem; }}
-    .st-key-stepper [data-testid="stCaptionContainer"] {{ display: none; }}
-  }}
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap');
+  /* Dark app bar: Streamlit's own top bar, recoloured, with the project title drawn into it. */
+  [data-testid="stHeader"] { background: #151821 !important; }
+  [data-testid="stHeader"]::before {
+    content: "Consumption-drop detection"; position: absolute; left: 5rem; top: 50%; transform: translateY(-50%);
+    font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 1.3rem; letter-spacing: -.01em; color: #fff;
+    max-width: calc(100% - 15rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-testid="stHeader"] button, [data-testid="stHeader"] a, [data-testid="stHeader"] span,
+  [data-testid="stHeader"] svg { color: #fff !important; }
+  [data-testid="stAppDeployButton"] button { border: 1px solid rgba(255,255,255,.3) !important; border-radius: 8px; }
+  [data-testid="stMainBlockContainer"] { padding-top: 5rem; }
+
+  /* Connected progress track: one segment per step, label and status underneath. */
+  .st-key-stepper [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
+  .st-key-stepper [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
+  .st-key-stepper button { justify-content: flex-start; border: none !important; border-radius: 0 !important;
+                           background: transparent !important; box-shadow: none !important; min-height: 0 !important;
+                           padding: 12px 0 2px !important; position: relative; }
+  .st-key-stepper button::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 5px;
+                                   border-radius: 3px; background: #e6e7eb; }
+  .st-key-stepper [class*="_ok"] button::before, .st-key-stepper [class*="_current"] button::before {
+    background: #2459d6; }
+  .st-key-stepper button p { font-size: .85rem; font-weight: 700; color: #3c3f4a; white-space: nowrap;
+                             overflow: hidden; text-overflow: ellipsis; }
+  .st-key-stepper [class*="_current"] button p { color: #2459d6; }
+  .st-key-stepper button p span { font-size: .75rem; font-weight: 400; margin-left: 6px; }
+  .st-key-stepper button:disabled { opacity: .7; }
+  .st-key-stepper button:not(:disabled):hover p { text-decoration: underline; }
+  @media (max-width: 640px) {
+    [data-testid="stHeader"]::before { left: 1rem; font-size: 1.05rem; max-width: calc(100% - 8rem); }
+    .st-key-stepper button p { font-size: .78rem; }
+    .st-key-stepper button p span { display: none; }
+  }
 </style>""")
-    # Called inside the container keyed "stepper", which the CSS above pins to the top.
-    st.html(f'<div class="stepper-title"><b>⚡ Consumption-drop detection</b>'
-            f'<span>Step {cur + 1} of {len(STEPS)} · {STEP_NAMES[cur]}</span></div>')
     cols = st.columns(len(STEPS))
     for i, (col, name) in enumerate(zip(cols, STEP_NAMES)):
+        # Segment colour comes from CSS keyed on this name: "_current" and "_ok" (done) are blue.
         state = "current" if i == cur else "done" if done[i] else "todo"
         mark = "✓" if done[i] and i != cur else str(i + 1)
-        col.button(f"{mark}  {name}", key=f"step{i}_{state}", width="stretch", disabled=not reachable[i],
-                   on_click=go, args=(STEPS[i],))
-        col.caption(subs[i])
+        col.button(f"{mark} · {name} :gray[{subs[i]}]", key=f"step{i}_{state}{'_ok' if done[i] else ''}",
+                   width="stretch", disabled=not reachable[i], help=subs[i], on_click=go, args=(STEPS[i],))
 
 
 # ---------------------------------------------------------------- step 1
@@ -118,7 +125,7 @@ def scenario_label(kind: str) -> str:
 
 
 def step_generate():
-    st.header("Step 1 · Generate data")
+    st.header("Generate data")
     st.write("This is a mock project, so instead of asking you for real utility data, the app builds a "
              "synthetic population of smart meters. A handful of meters have known problems planted in them, "
              "so after detection you can see exactly which ones the pipeline caught and which it correctly ignored.")
@@ -446,8 +453,8 @@ def show_verdict(r: pd.Series):
     else:
         st.success("**Not flagged.** Its drop is in line with the neighbours on its transformer.")
     c = st.columns(4)
-    c[0].metric("Used to use", num(r["baseline_daily_kwh"], ".1f") + " kWh/day")
-    c[1].metric("Uses now", num(r["current_daily_kwh"], ".1f") + " kWh/day",
+    c[0].metric("Used to use (kWh/day)", num(r["baseline_daily_kwh"], ".1f"))
+    c[1].metric("Uses now (kWh/day)", num(r["current_daily_kwh"], ".1f"),
                 None if pd.isna(r["drop_pct"]) else f"-{r['drop_pct']:.0f}%")
     c[2].metric("Neighbours' drop", num(r["peer_drop_pct"], ".0f") + "%",
                 help="Typical drop of the other meters on the same transformer. Mostly the season.")
@@ -552,7 +559,7 @@ def show_windows(eval_date, history_start, history_end, lead: str = ""):
 
 
 def step_detect():
-    st.header("Step 2 · Detect suspected thefts")
+    st.header("Detect suspected thefts")
     if not all_loaded():
         st.warning("Generate the data first.")
         st.button("← Back to data generation", on_click=go, args=(STEPS[0],))
@@ -790,7 +797,7 @@ def truth_check(scores: pd.DataFrame):
 
 # ---------------------------------------------------------------- step 3
 def step_send():
-    st.header("Step 3 · Send suspected cases to SE")
+    st.header("Send suspected cases to SE")
     if ss.scores is None:
         st.warning("Run detection first.")
         st.button("← Back to detection", on_click=go, args=(STEPS[1],))
