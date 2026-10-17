@@ -47,10 +47,10 @@ MIN_DAYS = cfg.baseline_days + cfg.baseline_gap_days + cfg.current_window_days
 
 
 def start_over():
-    """Back to an empty Generate data page: drops the data, results, sends and every widget's state."""
+    """Home: back to the intro page with a fresh analysis (drops the data, results, sends and all widget state)."""
     for k in list(ss.keys()):
         del ss[k]
-    ss.step = STEPS[0]
+    ss.step = INTRO
     ss.scroll_to_top = 1
 
 
@@ -124,8 +124,14 @@ def app_styles():
   .st-key-intro_cta { background: #151821; border-radius: 16px; padding: clamp(24px, 4vw, 44px); }
   .st-key-intro_hero button[kind="primary"], .st-key-intro_cta button[kind="primary"] {
     min-height: 48px; padding: 0 24px; font-weight: 700; }
+  .intro-read { display: inline-flex; align-items: center; justify-content: center; min-height: 48px;
+                padding: 0 24px; margin-top: 28px; border-radius: 8px; background: #2459d6; color: #ffffff !important;
+                font-weight: 700; font-size: 16px; text-decoration: none !important; }
+  .intro-read:hover { background: #1d4bb8; }
+  .st-key-intro_start button { padding: 0 !important; min-height: 0 !important; }
+  .st-key-intro_start button p { color: #2459d6; font-weight: 600; font-size: 15px; }
+  .st-key-intro_start button:hover p { text-decoration: underline; }
   .intro-meta { font-size: 14px; color: #5b6172; }
-  .intro-meta a { color: #2459d6; font-weight: 600; }
   .st-key-scroll_js { height: 0; overflow: hidden; margin: 0; }
   .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
   .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
@@ -231,10 +237,12 @@ def intro_page():
     with st.container(key="intro_hero"):
         c = st.columns([1.15, 1], gap="large", vertical_alignment="center")
         with c[0]:
-            st.html(hero_text)
-            st.button("Start the demo →", type="primary", key="intro_start", on_click=go, args=(STEPS[0],))
-            st.html('<div class="intro-meta">3 steps · about 3 minutes · generated data, no real customers'
-                    ' · <a href="#how">How it works ↓</a></div>')
+            # Reading comes first: the explainer is the main action, the demo a small skip link.
+            st.html(hero_text + '<a class="intro-read" href="#explainer">Read the explainer ↓</a>')
+            st.button("or skip straight to the demo →", type="tertiary", key="intro_start",
+                      on_click=go, args=(STEPS[0],))
+            st.html('<div class="intro-meta">The demo: 3 steps · about 3 minutes · generated data, '
+                    'no real customers</div>')
         c[1].html(hero_card)
     st.html(body)
     with st.container(key="intro_cta"):
@@ -1079,7 +1087,7 @@ def sends_today() -> int:
 
 
 app_styles()
-st.button("Consumption-drop detection", key="home", type="tertiary", help="Start over", on_click=start_over)
+st.button("Consumption-drop detection", key="home", type="tertiary", help="Home: start a fresh analysis", on_click=start_over)
 if ss.step == INTRO:
     intro_page()
 else:

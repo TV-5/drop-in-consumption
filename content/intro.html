@@ -1,7 +1,8 @@
 <!--
 Intro page content, rendered by app.py's intro_page(). Four parts separated by the split marker:
-hero text | hero example card | body sections | closing call to action. The "Start the demo" buttons are
-Streamlit buttons placed between the parts, because a link cannot move the app to step 1.
+hero text | hero example card | body sections | closing call to action. The hero's main action is a link to
+the explainer (#explainer); the "Start the demo" buttons are Streamlit buttons placed between the parts, because a
+link cannot move the app to step 1.
 -->
 <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 14px">SMART-METER ANALYTICS · EXPLAINER</div>
 <h1 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(34px, 4.4vw, 54px); line-height: 1.08; letter-spacing: -0.025em; margin: 0 0 20px; padding: 0; color: #151821">Find homes where electricity may be going unbilled.</h1>
@@ -30,7 +31,7 @@ Streamlit buttons placed between the parts, because a link cannot move the app t
 <!-- split -->
 <div style="color: #1d2130; font-size: 17px; line-height: 1.6">
 
-<section style="padding-top: clamp(40px, 6vw, 72px)">
+<section id="explainer" style="padding-top: clamp(40px, 6vw, 72px)">
 <div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">THE PROBLEM</div>
 <h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; padding: 0; color: #151821; max-width: 22em">Some meters record less electricity than the home really uses.</h2>
 <p style="margin: 0 0 32px; color: #3a3f4f; max-width: 40em">A common way to steal power is to rewire around the meter, a “bypass”, so it only sees part of the load. Think of a hidden pipe running around a water meter: water still flows, the bill just stops counting it.</p>
