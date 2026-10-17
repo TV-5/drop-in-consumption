@@ -2,7 +2,9 @@
 
 Run with:  streamlit run app.py
 """
+import base64
 import os
+import re
 from datetime import date
 from pathlib import Path
 
@@ -132,6 +134,24 @@ def app_styles():
   .st-key-intro_start button p { color: #2459d6; font-weight: 600; font-size: 15px; }
   .st-key-intro_start button:hover p { text-decoration: underline; }
   .intro-meta { font-size: 14px; color: #5b6172; }
+  /* Intro sections: each heading pins under the app bar while its section is read and the next one pushes it out.
+     One amber strip, pinned right under the app bar on a track of the bar's colour, shows progress through the whole explainer and is full at
+     its end (scroll-driven, no script). */
+  [data-testid="stMain"] { scroll-behavior: smooth; }
+  .sec { scroll-margin-top: 3.75rem; }
+  .sec-head { position: sticky; top: 3.75rem; z-index: 5; background: #ffffff; padding: 16px 0 12px; margin-bottom: 12px; }
+  .sec-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+              font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+  .sec-label { letter-spacing: .16em; color: #2459d6; }
+  .sec-count { color: #5b6172; }
+  .sec-head h2 { font-family: 'Manrope', sans-serif !important; font-weight: 800; font-size: clamp(22px, 2.6vw, 32px);
+                 line-height: 1.15; letter-spacing: -.02em; margin: 6px 0 0; padding: 0; color: #151821; }
+  .read-track { position: fixed; top: 3.75rem; left: 0; right: 0; height: 4px; z-index: 6; background: #151821; }
+  .read-bar { height: 4px; background: #ffb020; box-shadow: 0 0 10px rgba(255,176,32,.75); transform-origin: left;
+              animation: sec-fill linear both;
+              animation-timeline: --explainer; animation-range: contain 0% contain 100%; }
+  @keyframes sec-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  @supports not (animation-timeline: view()) { .read-track { display: none; } }
   .st-key-scroll_js { height: 0; overflow: hidden; margin: 0; }
   .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
   .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
@@ -229,10 +249,22 @@ def wizard_footer():
 INTRO_HTML = (ROOT / "content" / "intro.html").read_text(encoding="utf-8")
 
 
+def svg_as_img(html: str) -> str:
+    """st.html's sanitizer removes inline <svg>, so each drawing becomes an <img> of itself (data URI)."""
+    def one(m: re.Match) -> str:
+        attrs = m.group(1)
+        get = lambda name: (re.search(r'(?<![\w-])' + name + r'="([^"]*)"', attrs) or [None, ""])[1]
+        size = f"width:{get('width')}px;height:{get('height')}px;" if get("width") else ""
+        svg = m.group(0).replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
+        src = "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
+        return f'<img src="{src}" alt="{get("aria-label")}" style="{size}{get("style")}">'
+    return re.sub(r"<svg([^>]*)>.*?</svg>", one, html, flags=re.S)
+
+
 def intro_page():
     """What the project is, for a reader from outside the power sector. Text lives in content/intro.html."""
-    html = (INTRO_HTML.replace("{THRESHOLD}", f"{cfg.excess_drop_threshold_pct:g}")
-            .replace("{FLOOR}", f"{cfg.min_drop_kwh_per_day:g}"))
+    html = svg_as_img(INTRO_HTML.replace("{THRESHOLD}", f"{cfg.excess_drop_threshold_pct:g}")
+                      .replace("{FLOOR}", f"{cfg.min_drop_kwh_per_day:g}"))
     hero_text, hero_card, body, cta = html.split("<!-- split -->")
     with st.container(key="intro_hero"):
         c = st.columns([1.15, 1], gap="large", vertical_alignment="center")
