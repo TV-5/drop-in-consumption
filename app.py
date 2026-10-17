@@ -267,6 +267,17 @@ def example_for(kind: str) -> tuple[pd.Series, pd.Series]:
     return row, res[res["meter_id"] == row["meter_id"]].iloc[0]
 
 
+def teaser(body_html: str):
+    """Medium-style preview: the text fades out, and the buttons below decide whether to read on."""
+    st.html(f"""
+<style>
+  .teaser {{ -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
+            mask-image: linear-gradient(to bottom, #000 35%, transparent 100%); max-height: 170px; overflow: hidden; }}
+  .teaser p {{ margin: 0 0 10px; line-height: 1.55; }}
+</style>
+<div class="teaser">{body_html}</div>""")
+
+
 def show_example():
     """Faded teaser by default, so moving on is one obvious click; the full walk-through is opt-in."""
     ss.setdefault("show_example", False)
@@ -274,17 +285,10 @@ def show_example():
     if not ss.show_example:
         kind = example_kinds()[0]
         row, res = example_for(kind)
-        st.html(f"""
-<style>
-  .teaser {{ -webkit-mask-image: linear-gradient(to bottom, #000 35%, transparent 100%);
-            mask-image: linear-gradient(to bottom, #000 35%, transparent 100%); max-height: 170px; overflow: hidden; }}
-  .teaser p {{ margin: 0 0 10px; line-height: 1.55; }}
-</style>
-<div class="teaser">
-  <p>Follow one meter from the data, step by step: who it belongs to, what it used to use, what it uses now,
-    and <b>exactly where on its chart the pipeline flagged it</b>, or why it decided to leave it alone.</p>
-  <p><b>{scenario_label(kind)}, meter {row['meter_id']}:</b> {decision_text(res, html=True)}</p>
-</div>""")
+        teaser("<p>Follow one meter from the data, step by step: who it belongs to, what it used to use, what it "
+               "uses now, and <b>exactly where on its chart the pipeline flagged it</b>, or why it decided to leave "
+               f"it alone.</p><p><b>{scenario_label(kind)}, meter {row['meter_id']}:</b> "
+               f"{decision_text(res, html=True)}</p>")
         c = st.columns(2)
         c[0].button("Read the full example ↓", width="stretch", on_click=lambda: ss.update(show_example=True))
         c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
@@ -292,34 +296,41 @@ def show_example():
 
     kind = st.selectbox("Pick a scenario", example_kinds(), format_func=scenario_label)
     row, res = example_for(kind)
-    meter_id = row["meter_id"]
-    daily, master = ss.data["daily"], ss.data["master"]
-    eval_date = daily["reading_date"].max().date()
+    eval_date = ss.data["daily"]["reading_date"].max().date()
     st.caption(f"Detection result as of the last reading date, {eval_date:%d %b %Y}. "
                "Step 2 lets you run it for another date.")
+    meter_drilldown(res, eval_date, injected_onset=row["onset_date"],
+                    note=f"{SCENARIOS[kind][0]} Expected outcome: {SCENARIOS[kind][1]}.")
+    c = st.columns(2)
+    c[0].button("Hide the example ↑", width="stretch", on_click=lambda: ss.update(show_example=False))
+    c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
 
+
+def meter_drilldown(res: pd.Series, eval_date, injected_onset=None, note: str = ""):
+    """Everything about one meter's result: who it is, the decision in plain words, its chart and raw readings."""
+    meter_id = res["meter_id"]
+    daily, master = ss.data["daily"], ss.data["master"]
     show_meter_card(master[master["meter_id"] == meter_id].iloc[0])
     show_verdict(res)
-    show_example_chart(kind, row, res, eval_date)
-
+    meter_chart(res, eval_date, injected_onset)
+    st.caption((note + " " if note else "") + "Thick blue lines: what the meter used to use, and what it would "
+               "use now if it had dropped only as much as its neighbours.")
     with st.expander(f"Daily readings for meter {meter_id}"):
         st.dataframe(daily[daily["meter_id"] == meter_id].sort_values("reading_date", ascending=False)
                      .rename(columns={"reading_date": "Date", "kwh_import": "kWh used",
                                       "intervals_expected": "Readings expected", "intervals_received": "Readings arrived",
                                       "voltage_present_pct": "Supply on (%)"}).drop(columns="meter_id"),
                      width="stretch", hide_index=True, height=260)
-    c = st.columns(2)
-    c[0].button("Hide the example ↑", width="stretch", on_click=lambda: ss.update(show_example=False))
-    c[1].button("Next: detect suspected thefts →", type="primary", width="stretch", on_click=go, args=(STEPS[1],))
 
 
-def show_example_chart(kind: str, row: pd.Series, res: pd.Series, eval_date):
+def meter_chart(res: pd.Series, eval_date, injected_onset=None):
     daily, master = ss.data["daily"], ss.data["master"]
-    meter_id = row["meter_id"]
+    meter_id = res["meter_id"]
     w = windows(eval_date, cfg)
-    normal_ids = set(master["meter_id"]) - set(ss.truth["meter_id"])
-    typical = (daily[daily["meter_id"].isin(normal_ids)].groupby("reading_date")["kwh_import"].median()
-               .reset_index().assign(series="Typical normal meter"))
+    dt = master.loc[master["meter_id"] == meter_id, "dt_id"].iloc[0]
+    neighbours = set(master.loc[master["dt_id"] == dt, "meter_id"]) - {meter_id}
+    typical = (daily[daily["meter_id"].isin(neighbours)].groupby("reading_date")["kwh_import"].median()
+               .reset_index().assign(series="Typical neighbour (same transformer)"))
     example = daily.loc[daily["meter_id"] == meter_id, ["reading_date", "kwh_import"]].assign(
         series=f"Meter {meter_id}")
     bands = alt.Chart(pd.DataFrame([
@@ -332,18 +343,22 @@ def show_example_chart(kind: str, row: pd.Series, res: pd.Series, eval_date):
     lines = alt.Chart(pd.concat([typical, example])).mark_line(strokeWidth=2).encode(
         x=alt.X("reading_date:T", title=None), y=alt.Y("kwh_import:Q", title="kWh per day"),
         stroke=alt.Stroke("series:N", title=None, legend=alt.Legend(orient="top"),
-                          scale=alt.Scale(range=["#1a1a1a", "#8a8984"])),
+                          scale=alt.Scale(domain=[f"Meter {meter_id}", "Typical neighbour (same transformer)"],
+                                          range=["#1a1a1a", "#8a8984"])),
         tooltip=[alt.Tooltip("reading_date:T", format="%d %b %Y"), alt.Tooltip("kwh_import:Q", format=".2f")])
+    layers = [bands, lines]
     # Legend instead of on-chart text: the two dates are often days apart and the labels would overlap.
-    marks = [{"d": pd.Timestamp(row["onset_date"]), "event": "Problem injected"}]
+    marks = []
+    if injected_onset is not None:
+        marks.append({"d": pd.Timestamp(injected_onset), "event": "Problem injected"})
     if res["status"] == "FLAGGED" and pd.notna(res["onset_date"]):
         marks.append({"d": pd.Timestamp(res["onset_date"]), "event": "⚑ Flagged: drop starts here"})
-    rules = alt.Chart(pd.DataFrame(marks)).mark_rule(strokeDash=[4, 3], strokeWidth=2.5).encode(
-        x="d:T", tooltip=[alt.Tooltip("event:N", title="Event"), alt.Tooltip("d:T", title="Date", format="%d %b %Y")],
-        color=alt.Color("event:N", title=None, legend=alt.Legend(orient="bottom"),
-                        scale=alt.Scale(domain=["Problem injected", "⚑ Flagged: drop starts here"],
-                                        range=["#8a8984", "#d62728"])))
-    layers = [bands, lines, rules]
+    if marks:
+        layers.append(alt.Chart(pd.DataFrame(marks)).mark_rule(strokeDash=[4, 3], strokeWidth=2.5).encode(
+            x="d:T", tooltip=[alt.Tooltip("event:N", title="Event"), alt.Tooltip("d:T", title="Date", format="%d %b %Y")],
+            color=alt.Color("event:N", title=None, legend=alt.Legend(orient="bottom"),
+                            scale=alt.Scale(domain=["Problem injected", "⚑ Flagged: drop starts here"],
+                                            range=["#8a8984", "#d62728"]))))
     if pd.notna(res["baseline_daily_kwh"]):
         levels = [{"start": w["baseline_start"], "end": w["baseline_end"], "y": res["baseline_daily_kwh"]}]
         if pd.notna(res["peer_drop_pct"]):
@@ -353,8 +368,6 @@ def show_example_chart(kind: str, row: pd.Series, res: pd.Series, eval_date):
             x="start:T", x2="end:T", y="y:Q"))
     chart = alt.layer(*layers).resolve_scale(color="independent", fill="independent", stroke="independent")
     st.altair_chart(chart.properties(height=300), width="stretch")
-    st.caption(f"{SCENARIOS[kind][0]} Thick blue lines: what the meter used to use, and what it would use now "
-               f"if it had dropped only as much as its neighbours. Expected outcome: {SCENARIOS[kind][1]}.")
 
 
 def preview_scores(eval_date) -> pd.DataFrame:
@@ -525,126 +538,209 @@ def step_detect():
         st.info("Pick an evaluation date and run detection.")
         return
 
-    flagged = scores[scores["status"] == "FLAGGED"]
+    flagged = scores[scores["status"] == "FLAGGED"].sort_values("est_unbilled_kwh", ascending=False)
     suppressed = scores[scores["status"] == "SUPPRESSED"]
-    m = st.columns(4)
-    m[0].metric("Meters evaluated", f"{len(scores):,}")
-    m[1].metric("Suspected (flagged)", f"{len(flagged):,}")
-    m[2].metric("Suppressed", f"{len(suppressed):,}")
-    m[3].metric("Est. kWh at risk", f"{flagged['est_unbilled_kwh'].sum():,.0f}")
-    st.caption(f"Results for evaluation date {ss.eval_date:%d %b %Y}.")
+
+    st.divider()
+    st.header("Inspection results")
+    st.caption(f"Checked as of {ss.eval_date:%d %b %Y}. Tap a blue tile to see its meters.")
+    result_tiles(scores, flagged, suppressed)
+    t1, t2 = st.tabs(["💡 Insights", "📋 Report"])
+    with t1:
+        insights(flagged, suppressed)
+    with t2:
+        report(scores, flagged)
+
+    st.divider()
+    drilldown(flagged, suppressed)
+
+    if ss.truth is not None:
+        st.divider()
+        truth_check(scores)
+        if len(flagged):
+            st.button("Next: send to SE →", type="primary", width="stretch", key="next_bottom",
+                      on_click=go, args=(STEPS[2],))
+
+
+FLAGGED_COLS = {
+    "meter_id": st.column_config.TextColumn("Meter"),
+    "consumer_id": st.column_config.TextColumn("Consumer"),
+    "dt_id": st.column_config.TextColumn("Transformer"),
+    "drop_pct": st.column_config.NumberColumn("Drop %", format="%.0f%%"),
+    "peer_drop_pct": st.column_config.NumberColumn("Neighbours' drop", format="%.0f%%"),
+    "onset_date": st.column_config.DateColumn("Drop began", format="DD MMM YYYY"),
+    "est_unbilled_kwh": st.column_config.NumberColumn("kWh at risk", format="%.0f"),
+}
+
+
+def result_tiles(scores: pd.DataFrame, flagged: pd.DataFrame, suppressed: pd.DataFrame):
+    """Headline numbers; the suspected and suppressed tiles open their list in a popup."""
+    st.html("""
+<style>
+  .st-key-tile_flagged, .st-key-tile_suppressed { border-color: #2a78d6 !important; }
+  .st-key-tile_flagged:hover, .st-key-tile_suppressed:hover { background: rgba(42,120,214,.06); }
+</style>""")
+    c = st.columns(4)
+    with c[0].container(border=True):
+        st.metric("Meters checked", f"{len(scores):,}")
+        st.caption("every meter in the area")
+    with c[1].container(border=True, key="tile_flagged"):
+        st.metric("Suspected (flagged)", f"{len(flagged):,}")
+        if st.button("See the list →", key="open_flagged", type="tertiary"):
+            flagged_dialog(flagged)
+    with c[2].container(border=True, key="tile_suppressed"):
+        st.metric("Suppressed", f"{len(suppressed):,}")
+        if st.button("See the list →", key="open_suppressed", type="tertiary"):
+            suppressed_dialog(suppressed)
+    with c[3].container(border=True):
+        st.metric("kWh at risk", f"{flagged['est_unbilled_kwh'].sum():,.0f}")
+        st.caption("estimated units possibly unbilled")
+
+
+@st.dialog("Suspected thefts", width="large")
+def flagged_dialog(flagged: pd.DataFrame):
+    st.write(f"**{len(flagged)} meters** recommended for inspection, biggest kWh at risk first.")
+    st.dataframe(flagged[list(FLAGGED_COLS)], column_config=FLAGGED_COLS, width="stretch", hide_index=True)
+    st.caption("Use Meter drill-down on the page to see why any one of them was flagged.")
+
+
+@st.dialog("Suppressed meters", width="large")
+def suppressed_dialog(suppressed: pd.DataFrame):
+    st.write(f"**{len(suppressed)} meters** dropped, or could not be judged, but were set aside for a reason "
+             "other than theft. No visit is requested for them.")
+    counts = suppressed["suppression_code"].value_counts().rename_axis("Reason").reset_index(name="Meters")
+    counts["What it means"] = counts["Reason"].map(SUPPRESSION_CODES)
+    st.dataframe(counts, width="stretch", hide_index=True)
+    st.dataframe(suppressed[["meter_id", "dt_id", "suppression_code", "drop_pct", "comm_availability_pct"]],
+                 column_config={"meter_id": "Meter", "dt_id": "Transformer", "suppression_code": "Reason",
+                                "drop_pct": st.column_config.NumberColumn("Drop %", format="%.0f%%"),
+                                "comm_availability_pct": st.column_config.NumberColumn("Readings arrived",
+                                                                                       format="%.0f%%")},
+                 width="stretch", hide_index=True)
+
+
+def insights(flagged: pd.DataFrame, suppressed: pd.DataFrame):
+    points = []
+    if flagged.empty:
+        st.success("No meter dropped far enough beyond its neighbours to need a visit.")
+    else:
+        total = flagged["est_unbilled_kwh"].sum()
+        top = flagged.head(5)
+        per_dt = flagged["dt_id"].value_counts()
+        hot = per_dt[per_dt >= 2]
+        onsets = pd.to_datetime(flagged["onset_date"]).dropna()
+        points += [
+            f"**{len(flagged)} meters** are recommended for inspection, with about **{total:,.0f} kWh** "
+            "possibly unbilled between them.",
+            f"**Start with the top {len(top)}**: they hold **{top['est_unbilled_kwh'].sum() / total:.0%}** of the "
+            f"kWh at risk ({', '.join(top['meter_id'])}).",
+        ]
+        if len(hot):
+            points.append(f"**Hotspots**: {', '.join(f'{d} ({n} meters)' for d, n in hot.items())} have more than "
+                          "one suspect, so one trip to that transformer area can cover several.")
+        if len(onsets):
+            points.append(f"The drops began between **{onsets.min():%d %b}** and **{onsets.max():%d %b}**.")
+    if len(suppressed):
+        reasons = suppressed["suppression_code"].value_counts()
+        points.append(f"**{len(suppressed)} meters were set aside** for innocent reasons, most often "
+                      f"{reasons.index[0]} ({reasons.iloc[0]}): {SUPPRESSION_CODES[reasons.index[0]].lower()}.")
+    st.markdown("\n".join(f"- {p}" for p in points))
     visit_summary(flagged)
 
-    t1, t2, t3 = st.tabs([f"Suspected thefts ({len(flagged)})", f"Suppressed ({len(suppressed)})", "All meters"])
-    with t1:
-        sds = sorted(flagged["subdivision_id"].dropna().unique())
-        pick = st.multiselect("Sub-division", sds, default=sds)
-        view = flagged[flagged["subdivision_id"].isin(pick)]
-        st.dataframe(
-            view[["meter_id", "consumer_id", "subdivision_id", "dt_id", "baseline_daily_kwh", "current_daily_kwh",
-                  "drop_pct", "peer_drop_pct", "excess_drop_pct", "onset_date", "est_unbilled_kwh",
-                  "peer_group_size", "reason_text"]],
-            width="stretch", hide_index=True,
-            column_config={
-                "baseline_daily_kwh": st.column_config.NumberColumn("Baseline kWh/day", format="%.1f"),
-                "current_daily_kwh": st.column_config.NumberColumn("Current kWh/day", format="%.1f"),
-                "drop_pct": st.column_config.NumberColumn("Drop %", format="%.0f"),
-                "peer_drop_pct": st.column_config.NumberColumn("Peer drop %", format="%.0f"),
-                "excess_drop_pct": st.column_config.NumberColumn("Beyond peers (pts)", format="%.0f"),
-                "est_unbilled_kwh": st.column_config.NumberColumn("Est. unbilled kWh", format="%.0f"),
-                "reason_text": st.column_config.TextColumn("Reason", width="large"),
-            },
-        )
-        if len(view):
-            meter_chart(view)
-    with t2:
-        counts = (suppressed["suppression_code"].value_counts().rename_axis("code").reset_index(name="meters"))
-        counts["meaning"] = counts["code"].map(SUPPRESSION_CODES)
-        st.dataframe(counts, width="stretch", hide_index=True)
-        st.dataframe(suppressed[["meter_id", "subdivision_id", "suppression_code", "drop_pct",
-                                 "comm_availability_pct", "reason_text"]],
-                     width="stretch", hide_index=True)
-    with t3:
-        st.dataframe(scores, width="stretch", hide_index=True)
-    if ss.truth is not None:
-        truth_check(scores)
 
-    st.download_button("Download all scores (CSV)", scores.to_csv(index=False),
-                       file_name=f"scores_{ss.eval_date}.csv", mime="text/csv")
-    if len(flagged):
-        st.button("Next: send to SE →", type="primary", on_click=go, args=(STEPS[2],))
+def report(scores: pd.DataFrame, flagged: pd.DataFrame):
+    st.write("The inspection list as it will be emailed in Step 3, biggest kWh at risk first.")
+    if flagged.empty:
+        st.info("Nothing to report for this date.")
+    else:
+        st.dataframe(flagged[list(FLAGGED_COLS) + ["reason_text"]],
+                     column_config=FLAGGED_COLS | {"reason_text": st.column_config.TextColumn("Reason", width="large")},
+                     width="stretch", hide_index=True)
+    c = st.columns(2)
+    c[0].download_button("Download inspection list (CSV)", flagged.to_csv(index=False), width="stretch",
+                         file_name=f"inspection_list_{ss.eval_date}.csv", mime="text/csv", disabled=flagged.empty)
+    c[1].download_button("Download all meter scores (CSV)", scores.to_csv(index=False), width="stretch",
+                         file_name=f"scores_{ss.eval_date}.csv", mime="text/csv")
 
 
 def visit_summary(flagged: pd.DataFrame):
-    """How many inspection visits each sub-division's SE will be asked for."""
-    st.subheader(f"Inspection visits to request: {len(flagged)} meters")
+    """Who receives the list, and how many visits it asks for."""
     officers = ss.data["officers"]
     per_sd = (flagged.groupby("subdivision_id")
               .agg(meters=("meter_id", "size"), kwh=("est_unbilled_kwh", "sum"))
               .reindex(officers["subdivision_id"], fill_value=0).reset_index()
               .merge(officers, on="subdivision_id", how="left"))
-    cols = st.columns(len(per_sd))
-    for col, r in zip(cols, per_sd.itertuples()):
-        with col.container(border=True):
-            st.metric(f"Sub-division {r.subdivision_id}", f"{r.meters} visits")
-            st.caption(f"Goes to **{r.se_name}** ({r.se_email}) · {r.kwh:,.0f} kWh at risk")
+    for r in per_sd.itertuples():
+        st.info(f"**{r.meters} inspection visits** for {hierarchy.label(r.subdivision_id)} go to "
+                f"**{r.se_name}** in Step 3 ({r.kwh:,.0f} kWh at risk).", icon="📨")
     unmapped = sorted(set(flagged["subdivision_id"].dropna()) - set(officers["subdivision_id"]))
     if unmapped:
         st.warning(f"No SE for sub-division(s) {', '.join(unmapped)}: their meters cannot be sent.")
 
 
+def drilldown(flagged: pd.DataFrame, suppressed: pd.DataFrame):
+    """Same pattern as the Step 1 example: a faded teaser, opened on request."""
+    ss.setdefault("show_drill", False)
+    st.subheader("🔍 Meter drill-down")
+    pool = pd.concat([flagged, suppressed])
+    if pool.empty:
+        st.caption("No flagged or suppressed meters to look into.")
+    elif not ss.show_drill:
+        first = pool.iloc[0]
+        ask = "Why was" if first["status"] == "FLAGGED" else "Why wasn't"
+        teaser("<p>Pick any meter on the list and see the evidence behind the decision: its readings, its "
+               "neighbours, and the day its drop began.</p>"
+               f"<p><b>{ask} meter {first['meter_id']} flagged?</b> {decision_text(first, html=True)}</p>")
+    c = st.columns(2)
+    if not pool.empty:
+        if ss.show_drill:
+            c[0].button("Hide the drill-down ↑", width="stretch", on_click=lambda: ss.update(show_drill=False))
+        else:
+            c[0].button("Investigate a meter ↓", width="stretch", on_click=lambda: ss.update(show_drill=True))
+    if len(flagged):
+        c[1].button("Next: send to SE →", type="primary", width="stretch", on_click=go, args=(STEPS[2],))
+    if pool.empty or not ss.show_drill:
+        return
+
+    options = [f"Suspected ({len(flagged)})", f"Suppressed ({len(suppressed)})"]
+    group = st.segmented_control("Show", options, default=options[0] if len(flagged) else options[1],
+                                 key="drill_group") or options[0]
+    view = flagged if group.startswith("Suspected") else suppressed
+    if view.empty:
+        st.caption("No meters in this group.")
+        return
+    if view is flagged:
+        labels = {r.meter_id: f"{r.meter_id} · {r.est_unbilled_kwh:,.0f} kWh at risk" for r in view.itertuples()}
+    else:
+        labels = {r.meter_id: f"{r.meter_id} · {r.suppression_code}" for r in view.itertuples()}
+    meter = st.selectbox("Meter", list(labels), format_func=labels.get, key=f"drill_meter_{view is flagged}")
+    meter_drilldown(view[view["meter_id"] == meter].iloc[0], ss.eval_date)
+
+
 def truth_check(scores: pd.DataFrame):
     """Compare the run with the scenarios planted by the generator. Only possible because the data is synthetic."""
-    with st.expander("How did detection do against the planted scenarios?", expanded=True):
-        s = scores.merge(ss.truth[["meter_id", "injected_type"]], on="meter_id", how="left")
-        s["injected_type"] = s["injected_type"].fillna("normal")
+    st.subheader("Demo only: how did detection do against the planted scenarios?")
+    st.info("**This section exists only because the data is generated.** We planted known problems in some meters, "
+            "so we can check the pipeline's answers against the truth. With live data nobody knows the truth in "
+            "advance, so a production version would not have this section; field inspection results would be used "
+            "to measure accuracy instead.", icon="🧪")
+    s = scores.merge(ss.truth[["meter_id", "injected_type"]], on="meter_id", how="left")
+    s["injected_type"] = s["injected_type"].fillna("normal")
+    theft = s["injected_type"].isin(["partial_bypass", "full_bypass"])
+    flagged = s["status"] == "FLAGGED"
+    m = st.columns(3)
+    m[0].metric("Bypasses caught", f"{(theft & flagged).sum()} of {theft.sum()}")
+    m[1].metric("Innocent meters flagged", f"{(~theft & flagged).sum()}")
+    m[2].metric("Flags that were real thefts", f"{(theft & flagged).sum() / max(flagged.sum(), 1):.0%}")
+    with st.expander("Scenario by scenario"):
         s["outcome"] = np.where(s["status"] == "SUPPRESSED", "Suppressed: " + s["suppression_code"], s["status"])
-        table = pd.crosstab(s["injected_type"], s["outcome"]).reindex([k for k in SCENARIOS if k in set(s["injected_type"])])
+        kinds = [k for k in SCENARIOS if k in set(s["injected_type"])]
+        table = pd.crosstab(s["injected_type"], s["outcome"]).reindex(kinds)
         table.index = [scenario_label(k) for k in table.index]
-        table.insert(0, "Expected", [SCENARIOS[k][1] for k in SCENARIOS if k in set(s["injected_type"])])
+        table.insert(0, "Expected", [SCENARIOS[k][1] for k in kinds])
         st.dataframe(table, width="stretch")
-        theft = s["injected_type"].isin(["partial_bypass", "full_bypass"])
-        flagged = s["status"] == "FLAGGED"
-        m = st.columns(3)
-        m[0].metric("Bypasses caught", f"{(theft & flagged).sum()} of {theft.sum()}")
-        m[1].metric("Innocent meters flagged", f"{(~theft & flagged).sum()}")
-        m[2].metric("Precision of the list", f"{(theft & flagged).sum() / max(flagged.sum(), 1):.0%}")
         st.caption("Bypasses on very small loads can fall under the absolute kWh floor by design. "
-                   "Results depend on the evaluation date: a date before the injections shows nothing to catch.")
-
-
-def meter_chart(view: pd.DataFrame):
-    st.subheader("Meter drill-down")
-    meter = st.selectbox("Meter", view["meter_id"],
-                         format_func=lambda m: f"{m} · {view.set_index('meter_id').at[m, 'est_unbilled_kwh']:,.0f} kWh at risk")
-    r = view.set_index("meter_id").loc[meter]
-    w = windows(ss.eval_date, cfg)
-    d = ss.data["daily"]
-    d = d[(d["meter_id"] == meter) & d["reading_date"].between(w["baseline_start"], w["current_end"])]
-    series = pd.DataFrame({"date": d["reading_date"], "kWh": d["kwh_import"], "series": "Daily kWh"})
-    refs = pd.DataFrame([
-        {"date": w["baseline_start"], "kWh": r["baseline_daily_kwh"], "series": "Baseline (median)"},
-        {"date": w["baseline_end"], "kWh": r["baseline_daily_kwh"], "series": "Baseline (median)"},
-        {"date": w["current_start"], "kWh": r["baseline_daily_kwh"] * (1 - r["peer_drop_pct"] / 100), "series": "Expected from peers"},
-        {"date": w["current_end"], "kWh": r["baseline_daily_kwh"] * (1 - r["peer_drop_pct"] / 100), "series": "Expected from peers"},
-    ])
-    color = alt.Color("series:N", title=None, legend=alt.Legend(orient="top"),
-                      scale=alt.Scale(domain=["Daily kWh", "Baseline (median)", "Expected from peers"],
-                                      range=["#2a78d6", "#8a8984", "#eb6834"]))
-    line = alt.Chart(series).mark_line(strokeWidth=2).encode(
-        x=alt.X("date:T", title=None), y=alt.Y("kWh:Q", title="kWh per day"), color=color)
-    hover = alt.selection_point(fields=["date"], nearest=True, on="pointerover", empty=False)
-    pts = alt.Chart(series).mark_point(size=60, filled=True).encode(
-        x="date:T", y="kWh:Q", color=color,
-        opacity=alt.condition(hover, alt.value(1), alt.value(0)),
-        tooltip=[alt.Tooltip("date:T", format="%d %b %Y"), alt.Tooltip("kWh:Q", format=".2f")],
-    ).add_params(hover)
-    ref = alt.Chart(refs).mark_line(strokeWidth=2, strokeDash=[6, 4]).encode(
-        x="date:T", y="kWh:Q", color=color, detail="series:N")
-    onset = alt.Chart(pd.DataFrame({"date": [pd.Timestamp(r["onset_date"])]})).mark_rule(
-        strokeDash=[2, 2], color="#8a8984").encode(x="date:T")
-    st.altair_chart((line + ref + onset + pts).properties(height=300), width="stretch")
-    st.caption(r["reason_text"] + "  Dotted vertical line marks the estimated onset.")
+                   "Results depend on the check date: a date before the injections shows nothing to catch.")
 
 
 # ---------------------------------------------------------------- step 3
