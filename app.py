@@ -31,13 +31,14 @@ DEMO_INBOX = os.getenv("MAIL_TO", "").strip() or os.getenv("SMTP_USER", "").stri
 # project's mail account to write to whatever address they type into the directory.
 SE_DELIVERY_ALLOWED = os.getenv("ALLOW_SE_DELIVERY", "").strip().lower() == "true"
 STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
+INTRO = "intro"  # landing page; not one of the steps, so it has no place on the progress track
 
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="Consumption-drop detection", page_icon="⚡", layout="wide")
 cfg = load_config(ROOT / "config.yaml")
 ss = st.session_state
 ss.setdefault("data", {})       # kind -> parsed, valid dataframe
-ss.setdefault("step", STEPS[0])
+ss.setdefault("step", INTRO)  # first visit lands on the intro
 ss.setdefault("scores", None)
 ss.setdefault("truth", None)  # ground_truth of the generated population
 ss.setdefault("eval_date", None)
@@ -49,6 +50,7 @@ def start_over():
     """Back to an empty Generate data page: drops the data, results, sends and every widget's state."""
     for k in list(ss.keys()):
         del ss[k]
+    ss.step = STEPS[0]
 
 
 def go(step: str):
@@ -59,33 +61,12 @@ def all_loaded() -> bool:
     return all(k in ss.data for k in SCHEMAS)
 
 
-# ---------------------------------------------------------------- progress ribbon
-STEP_NAMES = ["Generate data", "Detect thefts", "Send to SE"]
-
-
-def stepper():
-    """Progress track under the app bar: where you are, what each step produced, and which steps can be opened yet.
-
-    Also emits the page-wide styles (app bar, headings, wizard footer).
-    """
-    scores = ss.scores
-    n_flagged = 0 if scores is None else int((scores["status"] == "FLAGGED").sum())
-    res = ss.get("last_result")
-    n_sent = 0 if res is None else int(res["status"].isin(["SENT", "TEST_SENT"]).sum())
-    done = [all_loaded(), scores is not None, n_sent > 0]
-    reachable = [True, all_loaded(), n_flagged > 0]
-    if all_loaded():
-        daily = ss.data["daily"]
-        sub1 = f"{daily['meter_id'].nunique():,} meters · {daily['reading_date'].nunique()} days"
-    else:
-        sub1 = "start here"
-    sub2 = f"{n_flagged} suspected" if scores is not None else ("ready to run" if all_loaded() else "needs data")
-    sub3 = f"{n_sent} sent" if n_sent else ("ready to send" if n_flagged else "needs flagged meters")
-    subs = [sub1, sub2, sub3]
-    cur = STEPS.index(ss.step)
+# ---------------------------------------------------------------- page-wide styles
+def app_styles():
+    """App bar, title button, progress track, headings, wizard footer and intro page."""
     st.html("""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=IBM+Plex+Mono:wght@500&display=swap');
   /* Dark app bar: Streamlit's own top bar, recoloured, with the project title drawn into it. */
   [data-testid="stHeader"] { background: #151821 !important; }
   /* The title is a real button laid over the bar: clicking it starts over. */
@@ -111,6 +92,14 @@ def stepper():
   .page-intro { max-width: 46rem; line-height: 1.6; margin: 0; }
 
   /* Wizard footer: progress line, Back, step dots, Next */
+  /* Intro page: hero band and closing call to action */
+  .st-key-intro_hero { background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 16px;
+                       padding: clamp(24px, 4vw, 48px); }
+  .st-key-intro_cta { background: #151821; border-radius: 16px; padding: clamp(24px, 4vw, 44px); }
+  .st-key-intro_hero button[kind="primary"], .st-key-intro_cta button[kind="primary"] {
+    min-height: 48px; padding: 0 24px; font-weight: 700; }
+  .intro-meta { font-size: 14px; color: #5b6172; }
+  .intro-meta a { color: #2459d6; font-weight: 600; }
   .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
   .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
   .wiz-line div { height: 3px; background: #2459d6; }
@@ -145,6 +134,29 @@ def stepper():
     [class*="st-key-stepper"] button p span { display: none; }
   }
 </style>""")
+
+
+# ---------------------------------------------------------------- progress ribbon
+STEP_NAMES = ["Generate data", "Detect thefts", "Send to SE"]
+
+
+def stepper():
+    """Progress track under the app bar: where you are, what each step produced, and which steps can be opened yet."""
+    scores = ss.scores
+    n_flagged = 0 if scores is None else int((scores["status"] == "FLAGGED").sum())
+    res = ss.get("last_result")
+    n_sent = 0 if res is None else int(res["status"].isin(["SENT", "TEST_SENT"]).sum())
+    done = [all_loaded(), scores is not None, n_sent > 0]
+    reachable = [True, all_loaded(), n_flagged > 0]
+    if all_loaded():
+        daily = ss.data["daily"]
+        sub1 = f"{daily['meter_id'].nunique():,} meters · {daily['reading_date'].nunique()} days"
+    else:
+        sub1 = "start here"
+    sub2 = f"{n_flagged} suspected" if scores is not None else ("ready to run" if all_loaded() else "needs data")
+    sub3 = f"{n_sent} sent" if n_sent else ("ready to send" if n_flagged else "needs flagged meters")
+    subs = [sub1, sub2, sub3]
+    cur = STEPS.index(ss.step)
     cols = st.columns(len(STEPS))
     for i, (col, name) in enumerate(zip(cols, STEP_NAMES)):
         # Segment colour comes from CSS keyed on this name: "_current" and "_ok" (done) are blue.
@@ -178,6 +190,29 @@ def wizard_footer():
         with c[2]:
             st.button(NEXT_LABELS[cur], key="wiz_next", type="primary", width="stretch", disabled=not ok,
                       help=None if ok else NEXT_BLOCKED[cur], on_click=go, args=(STEPS[cur + 1],))
+
+
+# ---------------------------------------------------------------- intro
+INTRO_HTML = (ROOT / "content" / "intro.html").read_text(encoding="utf-8")
+
+
+def intro_page():
+    """What the project is, for a reader from outside the power sector. Text lives in content/intro.html."""
+    html = (INTRO_HTML.replace("{THRESHOLD}", f"{cfg.excess_drop_threshold_pct:g}")
+            .replace("{FLOOR}", f"{cfg.min_drop_kwh_per_day:g}"))
+    hero_text, hero_card, body, cta = html.split("<!-- split -->")
+    with st.container(key="intro_hero"):
+        c = st.columns([1.15, 1], gap="large", vertical_alignment="center")
+        with c[0]:
+            st.html(hero_text)
+            st.button("Start the demo →", type="primary", key="intro_start", on_click=go, args=(STEPS[0],))
+            st.html('<div class="intro-meta">3 steps · about 3 minutes · generated data, no real customers'
+                    ' · <a href="#how">How it works ↓</a></div>')
+        c[1].html(hero_card)
+    st.html(body)
+    with st.container(key="intro_cta"):
+        st.html(cta)
+        st.button("Start the demo →", type="primary", key="intro_start_bottom", on_click=go, args=(STEPS[0],))
 
 
 # ---------------------------------------------------------------- step 1
@@ -1016,13 +1051,18 @@ def sends_today() -> int:
     return int((log["sent_at"].str[:10] == date.today().isoformat()).sum())
 
 
+app_styles()
 st.button("Consumption-drop detection", key="home", type="tertiary", help="Start over", on_click=start_over)
-# The progress track and footer are drawn after the page so they reflect what this run just did (generated, detected, sent).
-ribbon = st.container(key="stepper_top")
-{STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
-with ribbon:
-    stepper()
-with st.container(key="wizard_footer"):
-    wizard_footer()
+if ss.step == INTRO:
+    intro_page()
+else:
+    # The progress track and footer are drawn after the page so they reflect what this run just did.
+    ribbon = st.container(key="stepper_top")
+    {STEPS[0]: step_generate, STEPS[1]: step_detect, STEPS[2]: step_send}[ss.step]()
+    with ribbon:
+        stepper()
+    with st.container(key="wizard_footer"):
+        wizard_footer()
+    st.button("About this project", key="about", type="tertiary", on_click=go, args=(INTRO,))
 st.caption("Every output says *suspected* / *recommended for inspection*. "
            "A finding of theft is made by a field officer, not by this tool.")

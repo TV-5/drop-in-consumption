@@ -1,0 +1,271 @@
+<!--
+Intro page content, rendered by app.py's intro_page(). Four parts separated by the split marker:
+hero text | hero example card | body sections | closing call to action. The "Start the demo" buttons are
+Streamlit buttons placed between the parts, because a link cannot move the app to step 1.
+-->
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 14px">SMART-METER ANALYTICS · EXPLAINER</div>
+<h1 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(34px, 4.4vw, 54px); line-height: 1.08; letter-spacing: -0.025em; margin: 0 0 20px; padding: 0; color: #151821">Find homes where electricity may be going unbilled.</h1>
+<p style="font-size: clamp(18px, 1.6vw, 20px); line-height: 1.6; color: #3a3f4f; margin: 0; max-width: 34em">The tool spots smart meters whose use dropped far more than their neighbours’, and sends a short, explained list of homes worth inspecting to the engineers responsible, once a week.</p>
+<!-- split -->
+<div style="background: #ffffff; border: 1px solid #e3e7ef; border-radius: 14px; padding: 20px; box-shadow: 0 18px 40px -24px rgba(21,24,33,0.35)">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 14px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 16px; color: #151821">This week’s inspection list</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #5b6172">ILLUSTRATIVE</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="border: 1px solid #e3e7ef; border-radius: 10px; padding: 12px 14px">
+<div style="display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 15px"><span>Home A</span><span style="color: #b4461a">Suspected</span></div>
+<div style="font-size: 14px; color: #3a3f4f">Uses 72% less, while neighbours use 19% less</div>
+</div>
+<div style="border: 1px solid #e3e7ef; border-radius: 10px; padding: 12px 14px">
+<div style="display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 15px"><span>Home B</span><span style="color: #b4461a">Suspected</span></div>
+<div style="font-size: 14px; color: #3a3f4f">Uses 95% less, while neighbours use 21% less</div>
+</div>
+<div style="border: 1px solid #e3e7ef; border-radius: 10px; padding: 12px 14px; background: #f6f8fc">
+<div style="display: flex; justify-content: space-between; gap: 8px; font-weight: 700; font-size: 15px"><span>Home C</span><span style="color: #5b6172">Set aside</span></div>
+<div style="font-size: 14px; color: #3a3f4f">Uses 55% less, but has rooftop solar</div>
+</div>
+</div>
+</div>
+<!-- split -->
+<div style="color: #1d2130; font-size: 17px; line-height: 1.6">
+
+<section style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">THE PROBLEM</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; padding: 0; color: #151821; max-width: 22em">Some meters record less electricity than the home really uses.</h2>
+<p style="margin: 0 0 32px; color: #3a3f4f; max-width: 40em">A common way to steal power is to rewire around the meter, a “bypass”, so it only sees part of the load. Think of a hidden pipe running around a water meter: water still flows, the bill just stops counting it.</p>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px">
+<div style="background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 12px; padding: 22px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 6px; color: #151821">The utility loses revenue</div>
+<div style="color: #3a3f4f; font-size: 16px">Electricity is supplied but never billed, and honest customers end up carrying the cost.</div>
+</div>
+<div style="background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 12px; padding: 22px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 6px; color: #151821">Inspectors are scarce</div>
+<div style="color: #3a3f4f; font-size: 16px">Each area can visit only a handful of homes a week, out of hundreds or thousands of meters.</div>
+</div>
+<div style="background: #151821; border-radius: 12px; padding: 22px; color: #ffffff">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 6px; color: #ffffff">So the product is: where to look</div>
+<div style="color: #d5d9e3; font-size: 16px">A short, ranked list of homes that are worth a visit this week, each with a reason anyone can check.</div>
+</div>
+</div>
+</section>
+
+<section style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">WHO USES IT</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 28px; padding: 0; color: #151821">Three people, one weekly list.</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px">
+<div style="border: 1px solid #e3e7ef; border-radius: 12px; padding: 22px">
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px">
+<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2459d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V8l7-5 7 5v13"></path><path d="M9 21v-6h6v6"></path></svg>
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821">Superintending Engineer</div>
+</div>
+<div style="color: #3a3f4f; font-size: 16px">Oversees a whole region. Receives the week’s list for each area and decides where inspection effort goes.</div>
+</div>
+<div style="border: 1px solid #e3e7ef; border-radius: 12px; padding: 22px">
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px">
+<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2459d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.5"></circle></svg>
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821">Assistant Engineer</div>
+</div>
+<div style="color: #3a3f4f; font-size: 16px">Runs one local office area, a “sub-division”. Turns the list into this week’s field visits.</div>
+</div>
+<div style="border: 1px solid #e3e7ef; border-radius: 12px; padding: 22px">
+<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px">
+<svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2459d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20l-4.2-4.2"></path></svg>
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821">Field inspector</div>
+</div>
+<div style="color: #3a3f4f; font-size: 16px">Visits the home and checks the wiring. Only the inspector decides whether theft happened; the tool never does.</div>
+</div>
+</div>
+</section>
+
+<section id="how" style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">HOW IT DECIDES</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 28px; padding: 0; color: #151821; max-width: 22em">Three simple ideas, applied to every meter.</h2>
+<div style="display: flex; flex-wrap: wrap; gap: clamp(24px, 4vw, 48px); align-items: flex-start">
+<ol style="list-style: none; margin: 0; padding: 0; flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 22px">
+<li style="display: flex; gap: 16px; margin: 0">
+<div style="flex: 0 0 36px; height: 36px; border-radius: 50%; background: #2459d6; color: #ffffff; font-family: 'Manrope', sans-serif; font-weight: 800; display: flex; align-items: center; justify-content: center">1</div>
+<div style="min-width: 0">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 19px; color: #151821; margin-bottom: 4px">Compare each home with its own past</div>
+<div style="color: #3a3f4f; font-size: 16px">Its usual daily use over three months (“before”) against its use over the last month (“now”). A month in between is skipped, so a theft that starts slowly cannot hide in the “before” figure.</div>
+</div>
+</li>
+<li style="display: flex; gap: 16px; margin: 0">
+<div style="flex: 0 0 36px; height: 36px; border-radius: 50%; background: #2459d6; color: #ffffff; font-family: 'Manrope', sans-serif; font-weight: 800; display: flex; align-items: center; justify-content: center">2</div>
+<div style="min-width: 0">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 19px; color: #151821; margin-bottom: 4px">Compare it with its neighbours</div>
+<div style="color: #3a3f4f; font-size: 16px">Homes on the same street transformer live through the same weather and festivals. When autumn comes, everyone uses less air-conditioning, so a big drop on its own means nothing. A drop far bigger than the neighbours’ is what stands out.</div>
+</div>
+</li>
+<li style="display: flex; gap: 16px; margin: 0">
+<div style="flex: 0 0 36px; height: 36px; border-radius: 50%; background: #2459d6; color: #ffffff; font-family: 'Manrope', sans-serif; font-weight: 800; display: flex; align-items: center; justify-content: center">3</div>
+<div style="min-width: 0">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 19px; color: #151821; margin-bottom: 4px">Rule out innocent explanations</div>
+<div style="color: #3a3f4f; font-size: 16px; margin-bottom: 10px">Meters that dropped for a good reason are set aside, and the reason is recorded:</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">Rooftop solar</span>
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">Empty house</span>
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">Meter not reporting</span>
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">New or replaced meter</span>
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">Disconnected</span>
+<span style="font-size: 14px; padding: 4px 12px; border-radius: 999px; background: #f6f8fc; border: 1px solid #e3e7ef">Drop too small to matter</span>
+</div>
+</div>
+</li>
+</ol>
+<figure style="flex: 1 1 400px; min-width: 0; margin: 0; background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 14px; padding: 20px">
+<div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 16px; color: #151821">Same street, very different drop</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.12em; color: #5b6172">ILLUSTRATIVE</div>
+</div>
+<svg role="img" aria-label="Line chart: the neighbours’ daily use dips gently by about 20 percent from before to now, while one home’s use falls by about 70 percent." viewBox="0 0 600 300" style="width: 100%; height: auto; display: block">
+<rect x="20" y="20" width="300" height="230" fill="#2459d6" fill-opacity="0.07"></rect>
+<rect x="320" y="20" width="110" height="230" fill="#8a8f9c" fill-opacity="0.08"></rect>
+<rect x="430" y="20" width="150" height="230" fill="#d9622b" fill-opacity="0.09"></rect>
+<text x="30" y="46" font-family="Source Sans 3, sans-serif" font-size="22" font-weight="700" fill="#2459d6">Before</text>
+<text x="330" y="46" font-family="Source Sans 3, sans-serif" font-size="22" font-weight="700" fill="#5b6172">Skipped</text>
+<text x="440" y="46" font-family="Source Sans 3, sans-serif" font-size="22" font-weight="700" fill="#b4461a">Now</text>
+<polyline points="20,92 60,88 100,94 140,90 180,95 220,92 260,97 300,99 340,104 380,110 420,116 460,120 500,123 540,125 580,126" fill="none" stroke="#8a8f9c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+<polyline points="20,86 60,92 100,84 140,90 180,86 220,93 260,88 300,92 340,96 380,98 400,100 412,204 440,214 480,210 520,216 560,212 580,214" fill="none" stroke="#151821" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></polyline>
+<line x1="20" y1="250" x2="580" y2="250" stroke="#c9cfdb" stroke-width="2"></line>
+<text x="20" y="282" font-family="Source Sans 3, sans-serif" font-size="20" fill="#5b6172">Daily electricity use over five months</text>
+</svg>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 10px; font-size: 15px">
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 22px; height: 4px; border-radius: 2px; background: #8a8f9c"></span>Neighbours: about 20% less (the season)</div>
+<div style="display: flex; align-items: center; gap: 8px"><span style="width: 22px; height: 4px; border-radius: 2px; background: #151821"></span>This home: about 70% less</div>
+</div>
+</figure>
+</div>
+<div style="margin-top: 32px; border: 2px solid #d9622b; background: #fdf3ee; border-radius: 14px; padding: 22px 24px; display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(36px, 4vw, 48px); line-height: 1; color: #b4461a">{THRESHOLD} pts</div>
+<div style="flex: 1 1 320px; min-width: 0">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821; margin-bottom: 4px">The flag rule</div>
+<div style="color: #3a3f4f; font-size: 16px">A home is flagged when its use fell more than {THRESHOLD} percentage points further than its neighbours’, and by at least {FLOOR} units a day. Both limits are settings the utility can tune during a pilot, without changing code.</div>
+</div>
+</div>
+</section>
+
+<section style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">WHAT COMES OUT</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 16px; padding: 0; color: #151821; max-width: 22em">A ranked list in the engineer’s inbox, every week.</h2>
+<p style="margin: 0 0 28px; color: #3a3f4f; max-width: 40em">Homes with the most electricity possibly going unbilled come first. Every home carries a reason written in plain words, so an engineer can check it before sending anyone out.</p>
+<div style="border: 1px solid #e3e7ef; border-radius: 14px; overflow: hidden; box-shadow: 0 18px 40px -28px rgba(21,24,33,0.35)">
+<div style="background: #f6f8fc; border-bottom: 1px solid #e3e7ef; padding: 16px 20px">
+<div style="font-size: 13px; color: #5b6172; margin-bottom: 2px">To: Superintending Engineer · Weekly, automatic</div>
+<div style="font-weight: 700; color: #151821; font-size: 16px">Suspected consumption-drop cases, week to 4 Oct 2026: 20 flagged for inspection</div>
+</div>
+<div style="padding: 18px 20px">
+<div style="overflow-x: auto">
+<table style="border-collapse: collapse; width: 100%; min-width: 520px; font-size: 15px">
+<thead>
+<tr>
+<th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #c9cfdb">Home</th>
+<th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #c9cfdb">Uses less by</th>
+<th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #c9cfdb">Neighbours use less by</th>
+<th style="text-align: left; padding: 8px 10px; border-bottom: 2px solid #c9cfdb">Beyond neighbours</th>
+</tr>
+</thead>
+<tbody>
+<tr><td style="padding: 8px 10px; border-bottom: 1px solid #e3e7ef">Home B</td><td style="padding: 8px 10px; border-bottom: 1px solid #e3e7ef">95%</td><td style="padding: 8px 10px; border-bottom: 1px solid #e3e7ef">21%</td><td style="padding: 8px 10px; border-bottom: 1px solid #e3e7ef; font-weight: 700">+75 pts</td></tr>
+<tr><td style="padding: 8px 10px">Home A</td><td style="padding: 8px 10px">72%</td><td style="padding: 8px 10px">19%</td><td style="padding: 8px 10px; font-weight: 700">+53 pts</td></tr>
+</tbody>
+</table>
+</div>
+<div style="margin-top: 14px; font-size: 14px; color: #5b6172">Illustrative rows. The full list is attached as a spreadsheet.</div>
+</div>
+</div>
+<div style="margin-top: 16px; display: flex; gap: 12px; align-items: flex-start; background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 12px; padding: 16px 18px">
+<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2459d6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 22px; margin-top: 2px"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v5"></path><path d="M12 16.5v.5"></path></svg>
+<div style="font-size: 16px; color: #3a3f4f"><strong style="color: #151821">Wording rule:</strong> every output says “suspected” or “recommended for inspection”. Nothing the tool produces ever states that theft happened.</div>
+</div>
+</section>
+
+<section style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">PRODUCT DECISIONS</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 28px; padding: 0; color: #151821">Built to be trusted by the people who act on it.</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px">
+<div style="border-top: 3px solid #2459d6; padding-top: 14px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821; margin-bottom: 6px">Explainable, no black box</div>
+<div style="color: #3a3f4f; font-size: 16px">The first version uses clear rules rather than a trained model, so every flag can be explained to an engineer in one sentence.</div>
+</div>
+<div style="border-top: 3px solid #2459d6; padding-top: 14px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821; margin-bottom: 6px">No weather data needed</div>
+<div style="color: #3a3f4f; font-size: 16px">Comparing with neighbours absorbs seasons, local power cuts and festivals, with no extra data feeds.</div>
+</div>
+<div style="border-top: 3px solid #2459d6; padding-top: 14px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821; margin-bottom: 6px">Tunable without code</div>
+<div style="color: #3a3f4f; font-size: 16px">Every limit lives in one settings file, so a pilot can adjust how strict the tool is in minutes.</div>
+</div>
+<div style="border-top: 3px solid #2459d6; padding-top: 14px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 18px; color: #151821; margin-bottom: 6px">Measured by real inspections</div>
+<div style="color: #3a3f4f; font-size: 16px">Accuracy can only be known once inspectors report back, so capturing their findings is part of the plan from day one.</div>
+</div>
+</div>
+</section>
+
+<section style="padding-top: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">ABOUT THIS DEMO</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 28px; padding: 0; color: #151821">What you will see, and how real use differs.</h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px">
+<div style="background: #f6f8fc; border: 1px solid #e3e7ef; border-radius: 12px; padding: 24px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 19px; color: #151821; margin-bottom: 12px">In this demo</div>
+<ul style="margin: 0; padding-left: 20px; color: #3a3f4f; font-size: 16px">
+<li style="margin-bottom: 8px">A realistic neighbourhood of smart meters is generated for you.</li>
+<li style="margin-bottom: 8px">Known problems are planted in some of them, so you can check what was caught and what was correctly ignored.</li>
+<li>Emails go to a single demo inbox, never to real engineers.</li>
+</ul>
+</div>
+<div style="background: #ffffff; border: 1px solid #e3e7ef; border-radius: 12px; padding: 24px">
+<div style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: 19px; color: #151821; margin-bottom: 12px">In real use</div>
+<ul style="margin: 0; padding-left: 20px; color: #3a3f4f; font-size: 16px">
+<li style="margin-bottom: 8px">Readings come straight from the utility’s meter database.</li>
+<li style="margin-bottom: 8px">The check runs on its own once a week, with no one pressing buttons.</li>
+<li>Each engineer receives the list for their own area.</li>
+</ul>
+</div>
+</div>
+<div style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 15px; color: #3a3f4f">
+<span style="font-weight: 700; color: #151821">The demo’s three steps:</span>
+<span style="padding: 4px 12px; border-radius: 999px; border: 1px solid #c9cfdb">1 · Generate data</span>
+<span aria-hidden="true" style="color: #8a8f9c">→</span>
+<span style="padding: 4px 12px; border-radius: 999px; border: 1px solid #c9cfdb">2 · Detect thefts</span>
+<span aria-hidden="true" style="color: #8a8f9c">→</span>
+<span style="padding: 4px 12px; border-radius: 999px; border: 1px solid #c9cfdb">3 · Send to the engineer</span>
+</div>
+</section>
+
+<section style="padding-top: clamp(40px, 6vw, 72px); padding-bottom: clamp(40px, 6vw, 72px)">
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; letter-spacing: 0.16em; color: #2459d6; margin-bottom: 10px">GLOSSARY</div>
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 38px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 20px; padding: 0; color: #151821">Six words you will meet in the demo.</h2>
+<div style="border-top: 1px solid #e3e7ef">
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">Smart meter</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">A meter that records a home’s electricity use every 30 minutes and sends it to the utility automatically.</div>
+</details>
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">kWh (unit)</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">The unit electricity is billed in, often just called a “unit”. A typical home uses a few to a few dozen a day.</div>
+</details>
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">Transformer (DT)</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">The box on a pole that a street’s homes are connected to. Homes on the same transformer are treated as neighbours.</div>
+</details>
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">Feeder</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">A power line that carries electricity into an area and supplies several transformers.</div>
+</details>
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">Sub-division</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">A utility’s local office area. The inspection list is made for one sub-division at a time.</div>
+</details>
+<details style="border-bottom: 1px solid #e3e7ef; padding: 14px 4px">
+<summary style="cursor: pointer; font-weight: 700; color: #151821; min-height: 28px">SE and AE</summary>
+<div style="color: #3a3f4f; font-size: 16px; margin-top: 6px">Superintending Engineer, who oversees a region, and Assistant Engineer, who runs one sub-division.</div>
+</details>
+</div>
+</section>
+
+</div>
+<!-- split -->
+<h2 style="font-family: 'Manrope', sans-serif; font-weight: 800; font-size: clamp(26px, 3vw, 36px); line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 8px; padding: 0; color: #ffffff">See it work on a whole neighbourhood.</h2>
+<div style="color: #d5d9e3; font-size: 17px">Generate the data, run the check, and send the list to the demo inbox. About three minutes.</div>

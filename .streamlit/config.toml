@@ -1,6 +1,8 @@
 [theme]
 # Light by default, whatever the viewer's system setting.
 base = "light"
+# Buttons and highlights in the app's blue, matching the progress track and headings.
+primaryColor = "#2459d6"
 
 [client]
 # Drop Streamlit's built-in menu items (Rerun, Clear cache, Print, Record screen, Settings) and the local Deploy
