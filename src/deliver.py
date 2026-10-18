@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import Config
+from .legal import COPYRIGHT
 
 EMAIL_COLUMNS = {
     "meter_id": "Meter",
@@ -77,6 +78,7 @@ connections on the same transformer. They are <b>recommended for inspection</b>,
 not by this analysis.</p>
 <table style="border-collapse:collapse;font-size:13px"><tr>{head}</tr>{rows}</table>
 <p style="color:#666;font-size:12px">The full list is attached as CSV. Generated automatically by the consumption-drop analytics pipeline.</p>
+<p style="color:#666;font-size:12px">Demo with generated data. {escape(COPYRIGHT)}</p>
 </div>"""
         emails.append(Email(name, addr, sds, subject, html, table, n, kwh))
     return emails, unmapped

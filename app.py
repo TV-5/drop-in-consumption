@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from src.baseline import windows
 from src.config import load_config
 from src.deliver import build_emails, send_emails
+from src.legal import CONTACT_URL, COPYRIGHT
 from src.pipeline import run_pipeline
 from sample_data import hierarchy
 from sample_data.generate import SCENARIOS, generate_population
@@ -34,6 +35,7 @@ DEMO_INBOX = os.getenv("MAIL_TO", "").strip() or os.getenv("SMTP_USER", "").stri
 SE_DELIVERY_ALLOWED = os.getenv("ALLOW_SE_DELIVERY", "").strip().lower() == "true"
 STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
 INTRO = "intro"  # landing page; not one of the steps, so it has no place on the progress track
+TERMS = "terms"  # Terms & disclaimer page, opened from the footer
 
 load_dotenv(ROOT / ".env")
 st.set_page_config(page_title="Consumption-drop detection", page_icon="⚡", layout="wide")
@@ -157,6 +159,8 @@ def app_styles():
   @keyframes sec-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
   @supports not (animation-timeline: view()) { .read-track { display: none; } }
   .st-key-scroll_js { height: 0; overflow: hidden; margin: 0; }
+  .st-key-site_footer { border-top: 1px solid rgba(128,128,128,.2); padding-top: 12px; margin-top: 8px; }
+  .st-key-site_footer button p { font-size: .85rem; color: #2459d6; }
   .st-key-wizard_footer { margin-top: 2rem; border-top: 1px solid rgba(128,128,128,.2); padding-top: 0; }
   .wiz-line { height: 3px; background: #e6e7eb; margin-top: -1px; }
   .wiz-line div { height: 3px; background: #2459d6; }
@@ -287,6 +291,21 @@ def intro_page():
     with st.container(key="intro_cta"):
         st.html(cta)
         st.button("Start the demo →", type="primary", key="intro_start_bottom", on_click=go, args=(STEPS[0],))
+
+
+# ---------------------------------------------------------------- terms
+TERMS_HTML = (ROOT / "content" / "terms.html").read_text(encoding="utf-8")
+
+
+def open_terms():
+    if ss.step != TERMS:
+        ss.before_terms = ss.step  # Back returns to whichever page the footer link was clicked on
+    go(TERMS)
+
+
+def terms_page():
+    st.html(TERMS_HTML.replace("{COPYRIGHT}", COPYRIGHT).replace("{CONTACT_URL}", CONTACT_URL))
+    st.button("← Back", key="terms_back", on_click=go, args=(ss.get("before_terms", INTRO),))
 
 
 # ---------------------------------------------------------------- step 1
@@ -1129,6 +1148,8 @@ app_styles()
 st.button("Consumption-drop detection", key="home", type="tertiary", help="Home: start a fresh analysis", on_click=start_over)
 if ss.step == INTRO:
     intro_page()
+elif ss.step == TERMS:
+    terms_page()
 else:
     # The progress track and footer are drawn after the page so they reflect what this run just did.
     ribbon = st.container(key="stepper_top")
@@ -1137,7 +1158,12 @@ else:
         stepper()
     with st.container(key="wizard_footer"):
         wizard_footer()
-    st.button("About this project", key="about", type="tertiary", on_click=go, args=(INTRO,))
-st.caption("Every output says *suspected* / *recommended for inspection*. "
-           "A finding of theft is made by a field officer, not by this tool.")
+with st.container(key="site_footer"):
+    st.caption("Every output says *suspected* / *recommended for inspection*. "
+               "A finding of theft is made by a field officer, not by this tool.")
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        st.caption(COPYRIGHT)
+        st.button("Terms & disclaimer", key="terms", type="tertiary", on_click=open_terms)
+        if ss.step != INTRO:
+            st.button("About this project", key="about", type="tertiary", on_click=go, args=(INTRO,))
 scroll_to_top()
