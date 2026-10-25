@@ -1,5 +1,7 @@
 # Consumption-drop detection
 
+[![tests](https://github.com/TV-5/drop-in-consumption/actions/workflows/tests.yml/badge.svg)](https://github.com/TV-5/drop-in-consumption/actions/workflows/tests.yml)
+
 Find homes where electricity may be going unbilled. This app spots smart meters whose use dropped far
 more than their neighbours’, rules out innocent explanations, and emails a short, explained inspection
 list to the engineer responsible.
@@ -60,7 +62,8 @@ src/
   config.py          Loads config.yaml
   legal.py           Copyright details used by the app and emails
 sample_data/         Synthetic population generator and mock network hierarchy
-tests/               Pipeline tests
+tests/unit/          One test file per module
+tests/integration/   Pipeline flows, email (fake mail server), the app driven end to end
 ```
 
 ## Run it locally
@@ -72,11 +75,30 @@ pip install -r requirements.txt
 python -m streamlit run app.py
 ```
 
-Then open http://localhost:8501. Run the tests with `python -m pytest`.
+Then open http://localhost:8501.
 
 To send email, copy `.env.example` to `.env` and fill in `SMTP_USER`, `SMTP_PASSWORD` (a Gmail App
 Password) and `MAIL_TO`. Without them, the app still shows a preview of every email. On Streamlit
 Community Cloud, put the same keys in the app’s Secrets.
+
+## Tests
+
+About 120 automated tests run on every push (GitHub Actions), with a coverage floor of 90%; the detection code is
+covered almost completely.
+
+- **Unit tests** check each module on its own: the before/skipped/now periods, drops, neighbour comparison, every
+  innocent-explanation rule, scoring and ranking, data validation, config, email building and the display helpers.
+- **Integration tests** run the whole pipeline on generated data (every planted scenario must get its expected
+  outcome), send email through a fake mail server (no real email), and drive the app from the intro to sending,
+  including step locking, the production-delivery lock, the daily limit and the guarantee that the demo inbox
+  address never reaches the browser.
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest                      # everything (about 3 minutes)
+python -m pytest -m "not app"         # skip the slower app tests
+python -m pytest --cov=src --cov=sample_data --cov-report=term-missing
+```
 
 ## Licence
 

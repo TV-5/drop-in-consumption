@@ -2,9 +2,7 @@
 
 Run with:  streamlit run app.py
 """
-import base64
 import os
-import re
 from datetime import date
 from pathlib import Path
 
@@ -17,6 +15,7 @@ from dotenv import load_dotenv
 from src.baseline import windows
 from src.config import load_config
 from src.deliver import build_emails, send_emails
+from src import display
 from src.legal import CONTACT_URL, COPYRIGHT
 from src.pipeline import run_pipeline
 from sample_data import hierarchy
@@ -25,7 +24,7 @@ from src.schemas import SCHEMAS, parse
 from src.suppress import SUPPRESSION_CODES
 
 ROOT = Path(__file__).parent
-LOG_PATH = ROOT / "delivery_log.csv"
+LOG_PATH = Path(os.getenv("DELIVERY_LOG") or ROOT / "delivery_log.csv")  # tests point this at a temp file
 DAILY_SEND_LIMIT = 20
 # Demo inbox: every email goes here in demo mode, and every SE in the directory defaults to it. Read from the
 # server's settings only (MAIL_TO, else the sender's own address) so the owner's address never sits in the code.
@@ -33,6 +32,14 @@ DEMO_INBOX = os.getenv("MAIL_TO", "").strip() or os.getenv("SMTP_USER", "").stri
 # Real per-SE delivery is off unless the server opts in. On a public page anyone could otherwise use the
 # project's mail account to write to whatever address they type into the directory.
 SE_DELIVERY_ALLOWED = os.getenv("ALLOW_SE_DELIVERY", "").strip().lower() == "true"
+
+
+# Display helpers live in src/display.py (testable); these wrappers pass in this app's settings.
+mask, svg_as_img = display.mask, display.svg_as_img
+shown = lambda addr: display.shown(addr, DEMO_INBOX)
+masked_officers = lambda df: display.masked_officers(df, DEMO_INBOX)
+unmask_officers = lambda df: display.unmask_officers(df, DEMO_INBOX)
+decision_text = lambda r, html=False: display.decision_text(r, cfg, html)  # cfg is loaded just below
 STEPS = ["1. Generate data", "2. Detect suspected thefts", "3. Send to SE"]
 INTRO = "intro"  # landing page; not one of the steps, so it has no place on the progress track
 TERMS = "terms"  # Terms & disclaimer page, opened from the footer
@@ -258,18 +265,6 @@ def wizard_footer():
 
 # ---------------------------------------------------------------- intro
 INTRO_HTML = (ROOT / "content" / "intro.html").read_text(encoding="utf-8")
-
-
-def svg_as_img(html: str) -> str:
-    """st.html's sanitizer removes inline <svg>, so each drawing becomes an <img> of itself (data URI)."""
-    def one(m: re.Match) -> str:
-        attrs = m.group(1)
-        get = lambda name: (re.search(r'(?<![\w-])' + name + r'="([^"]*)"', attrs) or [None, ""])[1]
-        size = f"width:{get('width')}px;height:{get('height')}px;" if get("width") else ""
-        svg = m.group(0).replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
-        src = "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")
-        return f'<img src="{src}" alt="{get("aria-label")}" style="{size}{get("style")}">'
-    return re.sub(r"<svg([^>]*)>.*?</svg>", one, html, flags=re.S)
 
 
 def intro_page():
@@ -654,33 +649,6 @@ def show_verdict(r: pd.Series):
                      f"{cfg.min_comm_availability_pct:g}% the drop may just be missing data.")
     with st.container(border=True):
         st.markdown("**How the decision was made**  \n" + decision_text(r))
-
-
-def decision_text(r: pd.Series, html: bool = False) -> str:
-    """The flag rule applied to one meter, in plain words."""
-    b = (lambda t: f"<b>{t}</b>") if html else (lambda t: f"**{t}**")
-    t, floor = cfg.excess_drop_threshold_pct, cfg.min_drop_kwh_per_day
-    if pd.isna(r["drop_pct"]) or pd.isna(r["peer_drop_pct"]):
-        return (f"There is not enough history to compare this meter against, so it is {b('not flagged')} "
-                f"({SUPPRESSION_CODES.get(r['suppression_code'], '').lower() or 'no baseline'}).")
-    me, peers, extra = r["drop_pct"], r["peer_drop_pct"], r["excess_drop_pct"]
-    s = (f"It now uses {b(f'{me:.0f}% less')} than before ({r['baseline_daily_kwh']:.1f} → "
-         f"{r['current_daily_kwh']:.1f} kWh a day). Its neighbours on the same transformer use "
-         f"{b(f'{peers:.0f}% less')}, which is the normal seasonal dip. ")
-    if extra > 0:
-        s += f"So it fell {b(f'{extra:.0f} percentage points more')} than its neighbours. "
-    else:
-        s += f"So it fell {b('no more than its neighbours')}. "
-    over = extra > t
-    s += f"The limit is {t:g} points, so this is {b('over the limit' if over else 'within the limit')}. "
-    if r["status"] == "FLAGGED":
-        return s + f"The drop is also {r['drop_kwh_per_day']:.1f} kWh a day (more than the {floor:g} kWh minimum), " \
-                   f"so it is {b('⚑ flagged for inspection')}."
-    if r["status"] == "SUPPRESSED":
-        why = SUPPRESSION_CODES[r["suppression_code"]].lower()
-        return s + (f"But it is {b('not flagged')}: {why}." if over else
-                    f"It is {b('not flagged')} ({why}).")
-    return s + f"It is {b('not flagged')}."
 
 
 def show_summary(kind: str, df: pd.DataFrame):
@@ -1111,25 +1079,6 @@ def replace_directory(df: pd.DataFrame):
     ss.officer_ver += 1  # new editor and uploader keys, so neither replays its old state
     ss.pop("last_result", None)
     st.rerun()
-
-
-def mask(addr: str) -> str:
-    name, _, domain = str(addr).partition("@")
-    return f"{name[:2]}***@{domain}" if domain else "***"
-
-
-def shown(addr: str) -> str:
-    """The demo inbox is the project owner's own address: it is shown masked everywhere, and only used to send."""
-    return mask(addr) if DEMO_INBOX and str(addr).strip().lower() == DEMO_INBOX.lower() else addr
-
-
-def masked_officers(df: pd.DataFrame) -> pd.DataFrame:
-    return df.assign(se_email=df["se_email"].map(shown))
-
-
-def unmask_officers(df: pd.DataFrame) -> pd.DataFrame:
-    """The directory editor shows the demo inbox masked; a row left as that mask still means the demo inbox."""
-    return df.assign(se_email=df["se_email"].replace(mask(DEMO_INBOX), DEMO_INBOX)) if DEMO_INBOX else df
 
 
 def masked(log: pd.DataFrame) -> pd.DataFrame:
